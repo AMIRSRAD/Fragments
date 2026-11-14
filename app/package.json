@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "build:desktop": "tauri build --debug --no-bundle --features custom-protocol",
+    "build:installer": "tauri build --bundles nsis",
     "tauri": "tauri"
   },
   "dependencies": {
