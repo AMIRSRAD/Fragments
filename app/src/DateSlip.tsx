@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react"
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react"
 import { ChevronLeft, ChevronRight, X } from "lucide-react"
 import { jalaaliMonthLength, toGregorian, toJalaali } from "jalaali-js"
 
@@ -63,11 +63,21 @@ export function DateSlip({date, calendar, apply, close, id}: {
   const [yearText, setYearText] = useState(String(year))
   const [hasDate, setHasDate] = useState(Boolean(date))
   const [error, setError] = useState("")
+  const grid = useRef<HTMLDivElement>(null)
+  const nextFocus = useRef<number | null>(null)
+  const [focusedDay, setFocusedDay] = useState<number | null>(null)
   const validYear = Number(yearText) === year
   const months = mode === "persian" ? persianMonths : gregorianMonths
   const days = monthLength(year, month, mode)
   const firstDay = gregorianDate(inGregorian({year, month, day: 1}, mode)).getUTCDay()
   const offset = mode === "persian" ? (firstDay + 1) % 7 : firstDay
+  const tabDay = Math.min(focusedDay ?? day, days)
+
+  useLayoutEffect(() => {
+    if (nextFocus.current === null) return
+    grid.current?.querySelector<HTMLButtonElement>(`[data-day="${nextFocus.current}"]`)?.focus()
+    nextFocus.current = null
+  }, [year, month])
 
   useEffect(() => {
     const picker = dialog.current
@@ -76,6 +86,7 @@ export function DateSlip({date, calendar, apply, close, id}: {
   }, [])
 
   function update(nextYear: number, nextMonth: number) {
+    setFocusedDay(null)
     setDate({year: nextYear, month: nextMonth, day: Math.min(day, monthLength(nextYear, nextMonth, mode))})
     setYearText(String(nextYear))
     setError("")
@@ -99,6 +110,7 @@ export function DateSlip({date, calendar, apply, close, id}: {
     }
     const converted = next === "persian" ? inPersian(displayed) : inGregorian(displayed, mode)
     setMode(next)
+    setFocusedDay(null)
     setDate(converted)
     setYearText(String(converted.year))
     setError("")
@@ -118,6 +130,33 @@ export function DateSlip({date, calendar, apply, close, id}: {
     event.preventDefault()
     if (!validYear || !hasDate) return
     commit(gregorianDate(inGregorian({year, month, day}, mode)).toISOString().slice(0, 10))
+  }
+
+  function navigateDays(event: KeyboardEvent<HTMLDivElement>) {
+    const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-day]")
+    if (!button || event.altKey || event.ctrlKey || event.metaKey || !validYear) return
+    const current = Number(button.dataset.day)
+    const direction = mode === "persian" ? -1 : 1
+    const destinations: Record<string, number> = {
+      ArrowLeft: current - direction,
+      ArrowRight: current + direction,
+      ArrowUp: current - 7,
+      ArrowDown: current + 7,
+      Home: 1,
+      End: days,
+    }
+    const target = destinations[event.key]
+    if (target === undefined) return
+    event.preventDefault()
+    if (target >= 1 && target <= days) {
+      grid.current?.querySelector<HTMLButtonElement>(`[data-day="${target}"]`)?.focus()
+      return
+    }
+    const next = adjacent(target < 1 ? -1 : 1)
+    if (!yearInRange(next.year, mode)) return
+    nextFocus.current = target < 1 ? monthLength(next.year, next.month, mode) + target : target - days
+    update(next.year, next.month)
+    setHasDate(false)
   }
 
   return <dialog ref={dialog} className="calendar-slip" id={id} aria-labelledby={id + "-heading"}
@@ -149,12 +188,14 @@ export function DateSlip({date, calendar, apply, close, id}: {
         }}/>
         <button type="button" aria-label="Next month" disabled={!yearInRange(adjacent(1).year, mode)} onClick={() => move(1)}><ChevronRight size={18}/></button>
       </div>
-      <div className="calendar-days" dir={mode === "persian" ? "rtl" : "ltr"}>
+      <div ref={grid} className="calendar-days" role="group" aria-label="Days of the month" dir={mode === "persian" ? "rtl" : "ltr"} onKeyDown={navigateDays}>
         {weekdays[mode].map(label => <span key={label} aria-hidden="true">{label}</span>)}
         {Array.from({length: offset}, (_, index) => <span key={`space-${index}`} aria-hidden="true"/>)}
         {Array.from({length: days}, (_, index) => {
           const number = index + 1
-          return <button type="button" key={number} aria-label={`Day ${number}`} aria-pressed={hasDate && day === number}
+          return <button type="button" key={number} data-day={number} tabIndex={number === tabDay ? 0 : -1}
+            aria-label={`Day ${number}`} aria-pressed={hasDate && day === number}
+            onFocus={() => setFocusedDay(number)}
             onClick={() => { setDate({year, month, day: number}); setHasDate(true) }}>
             {mode === "persian" ? digits.format(number) : number}
           </button>
