@@ -60,7 +60,7 @@ export const NotebookEntry = memo(function NotebookEntry({ entry, format, action
     dateControl.current?.focus({preventScroll:true})
   }
 
-  return <article className="notebook-entry" id={`entry-${entry.id}`} tabIndex={-1}
+  return <article className={gallery.length ? "notebook-entry has-media" : "notebook-entry"} id={`entry-${entry.id}`} tabIndex={-1}
     onDragOver={event => { if (event.dataTransfer.types.includes("Files")) event.preventDefault() }}
     onDrop={event => {
       if (!event.dataTransfer.types.includes("Files")) return
@@ -81,7 +81,7 @@ export const NotebookEntry = memo(function NotebookEntry({ entry, format, action
       {gallery.map(item => {
         const url=mediaUrl(entry,item)
         return <figure className={`photo-print media-print${item.id===cover?.id ? " cover-print" : ""}`} key={item.id}>
-          {failed.includes(item.id) ? <div className="media-unavailable"><p>Preview unavailable.</p><button className="write-line" onClick={()=>setFailed(previous=>previous.filter(id=>id!==item.id))}>Retry preview</button></div> : item.mime.startsWith("video/") ?
+          {failed.includes(item.id) ? <div className="media-unavailable"><p>Couldn’t display this attachment.</p><button className="write-line" onClick={()=>setFailed(previous=>previous.filter(id=>id!==item.id))}>Retry preview</button></div> : item.mime.startsWith("video/") ?
             <video src={url} controls preload="none" aria-label={item.caption || "Video"} onError={()=>setFailed(previous=>[...previous,item.id])}/> :
             <button className="print-image" aria-haspopup="dialog" aria-label={item.caption ? `Enlarge photograph: ${item.caption}` : "Enlarge photograph"} onClick={event=>openPhoto(item.id,event.currentTarget)}><img src={url} alt={item.caption} loading="lazy" onError={()=>setFailed(previous=>[...previous,item.id])}/></button>}
           <figcaption><input dir="auto" value={item.caption} aria-label="Media caption" placeholder="Write a caption" onChange={event=>change({media:items.map(value=>value.id===item.id ? {...value,caption:event.target.value} : value)})}/>

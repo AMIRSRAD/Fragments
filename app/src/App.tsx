@@ -436,7 +436,7 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
   function finding(entry: Entry, context: string) {
     const id = `result-${context}-${entry.id}`
     return <button className="index-line" id={id} key={entry.id} onClick={() => turn({page:"Notebook"},entry.id,id)}>
-      <span dir="auto">{entry.title || "Untitled memory"}<small>{format(entry.date)}</small></span><ArrowRight size={17}/>
+      <span><bdi>{entry.title || "Untitled memory"}</bdi><small>{format(entry.date)}</small></span><ArrowRight size={17}/>
     </button>
   }
 
@@ -459,8 +459,9 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
         {!years.length && <div className="index-leaf"><h1>Your first page</h1><button className="write-line" onClick={() => write()}><Plus size={17}/> Write a memory</button></div>}
       </>}
       {place.page === "Chapters" && <section className="index-leaf" key={place.key ?? "chapter-index"}>
-        <h1>{place.key ?? "Chapters"}</h1>
+        <h1 dir="auto">{place.key ?? "Chapters"}</h1>
         {place.key ? <>
+          {!entries.some(entry => entry.chapter === place.key) && <p className="empty-state">This chapter has no memories yet.</p>}
           {entries.filter(entry => entry.chapter === place.key).map(pageEntry)}
           <button className="write-line" onClick={() => write()}><Plus size={17}/> Write in this chapter</button>
         </> : <>
@@ -475,7 +476,7 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
           {chapterNames.map(chapter => {
             const id = `chapter-${encodeURIComponent(chapter)}`
             const count = entries.filter(entry => entry.chapter === chapter).length
-            return <button className="index-line" id={id} key={chapter} onClick={() => turn({page:"Chapters",key:chapter},undefined,id)}><span dir="auto">{chapter}<small>{count} {count === 1 ? "entry" : "entries"}</small></span><ArrowRight size={17}/></button>
+            return <button className="index-line" id={id} key={chapter} onClick={() => turn({page:"Chapters",key:chapter},undefined,id)}><span><bdi>{chapter}</bdi><small>{count} {count === 1 ? "entry" : "entries"}</small></span><ArrowRight size={17}/></button>
           })}</>}
       </section>}
       {place.page === "People" && <section className="index-leaf">
@@ -504,7 +505,10 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
       </section>}
       {place.page === "Find" && <section className="index-leaf"><h1>Find a memory</h1>
         <div className="search-field"><Search size={19} aria-hidden="true"/><input className="find-line" type="search" aria-label="Search your notebook" placeholder="A word, a name, a line…" autoFocus value={query} onChange={event => setQuery(event.target.value)}/></div>
-        {query.trim() && (matches.length ? matches.map(entry => finding(entry,"search")) : <p role="status">No matching memories.</p>)}
+        {query.trim() && (matches.length ? matches.map(entry => finding(entry,"search")) : <>
+          <p className="empty-state" role="status">No matching memories. Try a title, caption, or person’s name.</p>
+          <button className="write-line" onClick={() => {setQuery("");document.querySelector<HTMLInputElement>(".find-line")?.focus()}}>Clear search</button>
+        </>)}
       </section>}
       {place.page === "Deleted" && <section className="index-leaf"><h1>Recently deleted</h1>
         {!deleted.length && <p>No deleted memories.</p>}
@@ -537,7 +541,7 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
     <dialog ref={note} className="margin-note" aria-label="Person mentioned in the story" style={notePosition} onClose={() => setPerson(null)}
       onClick={dismissOnBackdrop}>
       {person && people[person] && <><button className="note-close" aria-label="Close person note" onClick={() => note.current?.close()}><X size={17}/></button>
-        <h2>{people[person].name}</h2><p>{people[person].note}</p>
+        <h2 dir="auto">{people[person].name}</h2><p dir="auto">{people[person].note}</p>
         {entries.filter(entry => mentions(entry.text,person)).map(entry => <button className="note-reference" key={entry.id} onClick={() => {note.current?.close();turn({page:"Notebook"},entry.id)}}>{entry.title || "Untitled memory"} <ArrowRight size={14}/></button>)}
       </>}
     </dialog>
