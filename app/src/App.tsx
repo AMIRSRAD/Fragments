@@ -117,7 +117,7 @@ function Journal() {
     {busy && <p role="status">{slow ? "Still processing the encrypted notebook. Larger archives can take longer." : exists ? "Checking your password…" : backup ? "Checking and restoring your backup…" : "Setting up encryption…"}</p>}
     <div className="cover-options">
     {exists === false && <button className="write-line" disabled={busy || choosingBackup} onClick={()=>void chooseBackup()}>Choose a backup</button>}
-    {backup && <div className="backup-selection"><span>{backup.split(/[\\\\/]/).at(-1)}</span><button className="icon-button" aria-label="Clear backup selection" disabled={busy || choosingBackup} onClick={()=>{setBackup(undefined);setError("")}}><X size={16}/></button></div>}
+    {backup && <div className="backup-selection"><bdi>{backup.split(/[\\\\/]/).at(-1)}</bdi><button className="icon-button" aria-label="Clear backup selection" disabled={busy || choosingBackup} onClick={()=>{setBackup(undefined);setError("")}}><X size={16}/></button></div>}
     {error && <p role="alert">{error}</p>}
     <button className="write-line" disabled={busy || choosingBackup} onClick={()=>setSample(true)}>Open the sample notebook</button>
     </div>

@@ -67,9 +67,9 @@ dialog { color: #382b23 }
 .lightbox img { display: block; max-width: 100%; max-height: 72dvh; object-fit: contain; margin: auto }
 .lightbox figcaption { padding: 10px 18px; text-align: center; overflow-wrap: anywhere; font: italic 21px var(--serif) }
 .cover-title { display: flex; align-items: baseline; gap: 10px; color: #84503b }
-.archive-landing { min-height: calc(100dvh - var(--title-bar-height)); display: grid; place-items: center; padding: clamp(18px,5vw,60px) }
-.archive-landing .archive-cover { width: min(100%, 470px); margin: 0; padding: clamp(24px,5vw,50px) }
-.archive-landing .cover-title { align-items: center; justify-content: center }
+.archive-landing { min-height: calc(100dvh - var(--title-bar-height)); display: grid; grid-template-columns: minmax(0, 1fr); place-items: center; padding: clamp(18px,5vw,60px) }
+.archive-landing .archive-cover { width: min(100%, 470px); min-width: 0; margin: 0; padding: clamp(18px,5vw,50px); overflow-wrap: anywhere }
+.archive-landing .cover-title { align-items: center; justify-content: center; flex-wrap: wrap; text-align: center }
 .archive-landing .archive-cover > p { text-align: center }
 .archive-landing .archive-cover form { display: grid; gap: 12px; margin-top: 25px }
 .archive-landing .archive-cover label { margin: 0 }
@@ -77,6 +77,8 @@ dialog { color: #382b23 }
 .cover-options { display: grid; justify-items: center; gap: 4px; margin-top: 22px; padding-top: 13px; border-top: 1px solid #d4bea5 }
 .cover-options p { text-align: center; margin: 4px 0 }
 .backup-selection { display: flex; align-items: center; gap: 6px; max-width: 100%; overflow-wrap: anywhere }
+.backup-selection bdi { min-width: 0 }
+.backup-selection button { flex-shrink: 0 }
 .media-gallery { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin: 12px 0 18px }
 .media-gallery .media-print { margin: 0; min-width: 0 }
 .media-gallery .cover-print { grid-column: 1 / -1 }
