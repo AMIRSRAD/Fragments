@@ -208,6 +208,7 @@ button:disabled { cursor: default }
   border-bottom: 1px solid var(--rule);
 }
 .cover-name { display: flex; align-items: center; gap: 8px; color: var(--accent) }
+.cover-name, .cover-actions, .bookmarks { min-width: 0 }
 .cover-name button { font: 37px/1 var(--serif); padding: 0 }
 .bookmarks, .cover-actions { display: flex; align-items: center; gap: 5px }
 .bookmarks button, .calendar-choice, .primary-action {
@@ -427,13 +428,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .window-controls button { border-radius: 0 }
 
 .journal-status {
-  position: absolute;
-  inset-inline-end: max(24px, calc((100% - 1260px) / 2));
-  bottom: 5px;
+  grid-column: 1 / -1;
+  justify-self: end;
+  text-align: end;
+  overflow-wrap: anywhere;
   font-size: 11px;
   color: var(--muted);
 }
-.book-cover { padding-bottom: 21px }
+.book-cover { row-gap: 5px; padding-bottom: 5px }
 .compact-year { display: none }
 .entry-date { color: var(--muted) }
 .ink-label { text-decoration: none }
@@ -465,11 +467,18 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .photo-print:hover .print-actions, .photo-print:focus-within .print-actions { opacity: 1 }
 }
 @media (max-width: 860px) {
-  .book-cover { padding-bottom: 22px }
-  .journal-status { inset-inline-end: 14px }
+  .book-cover { padding-bottom: 6px }
+  .bookmarks { flex-wrap: wrap }
 }
 @media (max-width: 560px) {
   .year-thread { display: none }
   .compact-year { display: inline-flex; align-items: center; gap: 9px; font-size: 13px; color: var(--muted) }
   .compact-year select { border: 1px solid var(--rule); border-radius: var(--control-radius); background: var(--paper); color: var(--accent); padding-inline: 8px; min-height: 32px; font-weight: 600 }
+}
+@media (max-width: 370px) {
+  .book-cover { grid-template-columns: minmax(0, 1fr) }
+  .cover-name { grid-column: 1; grid-row: 1 }
+  .cover-actions { grid-column: 1; grid-row: 2; flex-wrap: wrap; justify-content: flex-end }
+  .bookmarks { grid-row: 3 }
+  .journal-status { grid-row: 4 }
 }
