@@ -316,7 +316,7 @@ button:disabled { cursor: default }
 .entry-date { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--accent); position: relative; margin-bottom: 8px; font-size: 13px }
 .ink-label, .entry-date select { min-height: 30px }
 .ink-label { padding: 0; text-decoration: underline dotted; text-underline-offset: 5px }
-.entry-heading textarea, .photo-print figcaption input, .find-line {
+.entry-heading textarea, .photo-print figcaption textarea, .find-line {
   display: block;
   width: 100%;
   min-width: 0;
@@ -339,7 +339,16 @@ button:disabled { cursor: default }
 .entry-heading textarea:focus, .story-ink:focus { background: #f4e7d455 }
 .photo-print { position: relative; margin: 0; padding: 8px 8px 0; background: #fffdf7; border: 1px solid #e3d6c3; box-shadow: 0 5px 14px #68402a1c }
 .photo-print figcaption { display: grid; grid-template-columns: 1fr minmax(0, 5fr) 1fr; align-items: center; min-height: 38px }
-.photo-print figcaption input { grid-column: 2; text-align: center; font: italic 21px var(--serif); padding: 4px; color: var(--muted) }
+.photo-print figcaption textarea {
+  grid-column: 2;
+  text-align: center;
+  font: italic 21px/1.45 var(--serif);
+  padding: 4px;
+  color: var(--muted);
+  field-sizing: content;
+  overflow-wrap: anywhere;
+  resize: none;
+}
 .print-actions { display: flex; justify-content: end }
 .print-actions button { min-width: 28px; min-height: 30px }
 .media-gallery { margin: 13px 0 19px }
@@ -430,7 +439,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .ink-label { text-decoration: none }
 .ink-label:hover, .ink-label:focus-visible { text-decoration: underline dotted; color: var(--accent) }
 .entry-date select { font-size: inherit; text-overflow: ellipsis }
-.entry-heading textarea, .story-ink, .photo-print figcaption input { border-radius: var(--control-radius) }
+.entry-heading textarea, .story-ink, .photo-print figcaption textarea { border-radius: var(--control-radius) }
 .entry-heading textarea:dir(rtl) { line-height: 1.4; font-size: clamp(30px, 3.6vw, 50px) }
 .story-ink { unicode-bidi: plaintext }
 .index-line bdi, .note-reference bdi { overflow-wrap: anywhere }
@@ -441,7 +450,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .leaf-writing .notebook-entry.has-media { contain-intrinsic-block-size: auto 550px }
 .leaf-writing .notebook-entry:focus-within { content-visibility: visible }
-.photo-print figcaption input:hover, .photo-print figcaption input:focus { background: #f4e7d455 }
+.photo-print figcaption textarea:hover, .photo-print figcaption textarea:focus { background: #f4e7d455 }
 .entry-tools { gap: 7px 14px }
 .entry-tools .write-here {
   padding-inline: 9px;
