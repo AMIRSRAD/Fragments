@@ -250,6 +250,28 @@ pub(crate) fn playback(
         .map_err(message)
 }
 
+#[tauri::command]
+pub async fn read_album_media(app: AppHandle, id: String, mime: String) -> Result<tauri::ipc::Response, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let item = Media { id, mime, caption: String::new() };
+        if !valid_item(&item) {
+            return Err("Invalid attachment reference.".into());
+        }
+        let archive = app.state::<Archive>();
+        let guard = archive.0.lock().map_err(message)?;
+        let session = guard.as_ref().ok_or("Unlock the notebook before exporting.")?;
+        let mut stream = reader(&session.directory.join("media").join(format!("{}.age", item.id)), &session.identity)?;
+        let length = stream.seek(SeekFrom::End(0)).map_err(message)?;
+        if length > 128 * 1024 * 1024 {
+            return Err("Attachment exceeds the HTML album size limit.".into());
+        }
+        stream.seek(SeekFrom::Start(0)).map_err(message)?;
+        let mut bytes = Vec::with_capacity(length as usize);
+        stream.read_to_end(&mut bytes).map_err(message)?;
+        Ok(tauri::ipc::Response::new(bytes))
+    }).await.map_err(message)?
+}
+
 pub fn serve(app: AppHandle, request: Request<Vec<u8>>, responder: tauri::UriSchemeResponder) {
     tauri::async_runtime::spawn_blocking(move || {
         let archive = app.state::<Archive>();

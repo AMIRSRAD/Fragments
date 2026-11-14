@@ -16,7 +16,9 @@ pub fn run() {
             archive::save_archive,
             archive::backup_archive,
             archive::choose_backup,
+            archive::save_readable_album,
             media::import_media,
+            media::read_album_media,
             archive::lock_archive
         ])
         .run(tauri::generate_context!())

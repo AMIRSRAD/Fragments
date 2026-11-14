@@ -11,6 +11,11 @@ import "@fontsource/instrument-serif/400-italic.css"
 import "@fontsource/dm-sans/400.css"
 import "@fontsource/dm-sans/600.css"
 import "./App.css"
+import { dateLabel, dateEnd, yearBounds, type Timing } from "./dates"
+import { participant } from "./MemoryNotes"
+import { PersonProfile } from "./PersonProfile"
+import { AlbumForm } from "./AlbumForm"
+import { exportAlbum } from "./album"
 
 const bookmarks = [
   { page: "Notebook", Icon: BookOpen },
@@ -19,7 +24,7 @@ const bookmarks = [
   { page: "Find", Icon: Search },
 ] as const
 
-type Place = { page: "Notebook" | "Chapters" | "People" | "Find" | "Deleted"; key?: string }
+type Place = { page: "Notebook" | "Chapters" | "People" | "Find" | "Deleted" | "Album"; key?: string }
 type ReturnPoint = { place: Place; top: number; focusId?: string }
 
 type Contents = { entries: Entry[]; calendar: string; people?: People; deleted?: Entry[]; chapters?: string[] }
@@ -130,15 +135,20 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
   const [customChapters,setCustomChapters] = useState<string[]>(initial.chapters ?? [])
   const [newPerson,setNewPerson] = useState("")
   const [personForm,setPersonForm] = useState(false)
-  const [expandedPeople, setExpandedPeople] = useState<Record<PersonId, boolean>>({})
+  const [peopleQuery,setPeopleQuery] = useState("")
   const [chapterForm,setChapterForm] = useState(false)
   const [newChapter,setNewChapter] = useState("")
-  const [entries, setEntries] = useState<Entry[]>(() => [...initial.entries])
+  const [entries, setEntries] = useState<Entry[]>(() => initial.entries.map(entry => ({
+    ...entry,
+    people: (entry.people ?? []).map(value => Object.hasOwn(people,value) ? value :
+      Object.keys(people).find(id => people[id].name === value) ?? value),
+  })))
   const [place, setPlace] = useState<Place>({page:"Notebook"})
   const [history, setHistory] = useState<ReturnPoint[]>([])
   const returnPoint = useRef<ReturnPoint | null>(null)
   const [calendar, setCalendar] = useState(initial.calendar)
   const [query, setQuery] = useState("")
+  const [filters,setFilters] = useState({person:"",chapter:"",year:"",photos:false})
   const bookCover = useRef<HTMLElement>(null)
   useLayoutEffect(() => {
     const cover = bookCover.current
@@ -321,7 +331,7 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
   },[])
 
   const formatDate = useMemo(() => new Intl.DateTimeFormat("en", {dateStyle:"long", calendar, timeZone:"UTC"}), [calendar])
-  const format = useMemo(() => (date: string) => date ? formatDate.format(dateObject(date)) : "Undated", [formatDate])
+  const format = useMemo(() => (date: string, timing?: Timing) => dateLabel(date,timing,formatDate), [formatDate])
   const yearOf = useMemo(() => {
     const formatter = new Intl.DateTimeFormat("en", {year:"numeric", calendar, timeZone:"UTC"})
     const yearsByDate = new Map<string, string>()
@@ -343,15 +353,42 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
     else groups.set(year, [entry])
   }
   const years = [...groups.keys()].sort((a,b) => a === "Undated" ? 1 : b === "Undated" ? -1 : Number(b) - Number(a))
+  const filterYears = useMemo(() => {
+    if (place.page !== "Find") return []
+    const values = new Set<string>()
+    for (const entry of entries) {
+      const first = yearOf(entry.date)
+      values.add(first)
+      if (!entry.timing || !entry.date) continue
+      const last = Number(yearOf(dateEnd(entry.date,entry.timing)))
+      for (let year = Number(first) + 1; year <= last; year++) values.add(String(year))
+    }
+    return [...values].sort((a,b) => a === "Undated" ? 1 : b === "Undated" ? -1 : Number(b) - Number(a))
+  }, [entries,place.page,yearOf])
   const search = searchKey(query.trim())
-  const searchable = useMemo(() => new WeakMap<Entry, string>(), [people])
-  const matches = place.page === "Find" && search ? entries.filter(entry => {
+  const searchable = useMemo(() => new WeakMap<Entry, string>(), [people, calendar])
+  const hasFilters = Boolean(filters.person || filters.chapter || filters.year || filters.photos)
+  function writtenAbout(entry: Entry, id: PersonId) {
+    return mentions(entry.text,id) || (entry.reflections ?? []).some(note=>mentions(note.text,id))
+  }
+  function aboutPerson(entry: Entry,id: PersonId) {
+    return entry.about?.some(link=>link.personId === id && !link.phaseOnly) ?? false
+  }
+  const yearWindow = filters.year && filters.year !== "Undated" ? yearBounds(Number(filters.year),calendar) : null
+  const matches = place.page === "Find" && (search || hasFilters) ? entries.filter(entry => {
+    if (filters.chapter && entry.chapter !== filters.chapter) return false
+    if (filters.person && !participant(entry,filters.person,people) && !writtenAbout(entry,filters.person) && !aboutPerson(entry,filters.person)) return false
+    if (filters.photos && !attachments(entry).some(item=>item.mime.startsWith("image/"))) return false
+    if (filters.year === "Undated" && entry.date) return false
+    if (yearWindow && (!entry.date || entry.date >= yearWindow[1] || dateEnd(entry.date,entry.timing) < yearWindow[0])) return false
+    if (!search) return true
     let text = searchable.get(entry)
     if (text === undefined) {
       text = searchKey([
-    entry.title, storyText(entry.text), entry.chapter,
+    entry.title, storyText(entry.text), entry.chapter, format(entry.date,entry.timing),
+    ...(entry.reflections ?? []).map(note=>storyText(note.text)),
     ...attachments(entry).map(item => item.caption),
-    ...Object.keys(people).filter(id => mentions(entry.text,id)).map(id => people[id].name),
+    ...Object.keys(people).filter(id => (writtenAbout(entry,id) || participant(entry,id,people) || aboutPerson(entry,id))).map(id => people[id].name),
   ].join(" "))
       searchable.set(entry,text)
     }
@@ -406,20 +443,33 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
     setPending(null)
   }
 
-  function write(beside?: Entry) {
+  function write(beside?: Entry, phaseId?: string) {
     const local = new Date()
     const today = [local.getFullYear(), String(local.getMonth()+1).padStart(2,"0"), String(local.getDate()).padStart(2,"0")].join("-")
-    const entry = {id:crypto.randomUUID(), title:"", text:"", date:beside?.date ?? today, chapter:beside?.chapter ?? place.key ?? (persistent ? "My notebook" : chapters[0]), people:[]}
+    const personId = place.page === "People" ? place.key : undefined
+    const entry: Entry = {id:crypto.randomUUID(), title:"", text:"", date:beside?.date ?? today, timing:beside?.timing, chapter:beside?.chapter ?? (place.page === "Chapters" ? place.key : undefined) ?? (persistent ? "My notebook" : chapters[0]), people:[],
+      about:personId ? [{personId,phaseId:phaseId ?? beside?.about?.find(link=>link.personId===personId)?.phaseId}] : undefined}
     setEntries(previous => {
       const index = beside ? previous.findIndex(item => item.id === beside.id) + 1 : 0
       return [...previous.slice(0,index), entry, ...previous.slice(index)]
     })
-    if (place.page !== "Notebook" && !(place.page === "Chapters" && place.key)) turn({page:"Notebook"}, entry.id)
+    if (place.page !== "Notebook" && !personId && !(place.page === "Chapters" && place.key)) {
+      turn({page:"Notebook"}, entry.id)
+    }
     setPending({id:entry.id,focus:"title"})
   }
 
   function change(id: string, patch: Partial<Entry>) {
     const previousEntry = entries.find(entry => entry.id === id)
+    if (place.page === "People" && place.key && previousEntry && patch.about) {
+      const personId = place.key
+      const before = previousEntry.about?.find(link=>link.personId===personId)
+      const after = patch.about.find(link=>link.personId===personId)
+      if (before?.phaseId !== after?.phaseId || Boolean(before) !== Boolean(after)) {
+        if (after || participant(previousEntry,personId,people) || writtenAbout(previousEntry,personId)) setPending({id})
+        else focusAfterRemoval(id)
+      }
+    }
     if (place.page === "Notebook" && patch.date !== undefined && previousEntry && yearOf(previousEntry.date) !== yearOf(patch.date)) {
       setPending({id,focus:"date"})
     }
@@ -493,7 +543,7 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
   function finding(entry: Entry, context: string) {
     const id = `result-${context}-${entry.id}`
     return <button className="index-line" id={id} key={entry.id} onClick={() => turn({page:"Notebook"},entry.id,id)}>
-      <span><bdi>{entry.title || "Untitled memory"}</bdi><small>{format(entry.date)}</small></span><ArrowRight size={17}/>
+      <span><bdi>{entry.title || "Untitled memory"}</bdi><small>{format(entry.date,entry.timing)}</small></span><ArrowRight size={17}/>
     </button>
   }
 
@@ -504,7 +554,7 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
         {bookmarks.map(({page, Icon}) => <button key={page} aria-current={place.page === page ? "page" : undefined} onClick={() => selectTab(page)}><Icon size={16} aria-hidden="true"/>{page}</button>)}
       </nav>
       <div className="cover-actions">
-        <label className="calendar-choice"><CalendarDays size={16} aria-hidden="true"/><span className="sr-only">Display calendar</span><select value={calendar} onChange={event => setCalendar(event.target.value)}><option value="gregory">Gregorian</option><option value="persian">Persian</option></select></label>
+        <label className="calendar-choice"><CalendarDays size={16} aria-hidden="true"/><span className="sr-only">Display calendar</span><select value={calendar} onChange={event => {setCalendar(event.target.value);setFilters(previous=>({...previous,year:""}))}}><option value="gregory">Gregorian</option><option value="persian">Persian</option></select></label>
         <button className="primary-action" id="write-memory" onClick={() => write()} aria-label="Write a memory"><Plus size={17} aria-hidden="true"/><span>Write<span className="wide-action-label"> a memory</span></span></button>
       </div>
       <div className="journal-status" role="status">{closing ? "Saving before closing…" : working ? activity : status}</div>
@@ -536,45 +586,76 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
             return <button className="index-line" id={id} key={chapter} onClick={() => turn({page:"Chapters",key:chapter},undefined,id)}><span><bdi>{chapter}</bdi><small>{count} {count === 1 ? "entry" : "entries"}</small></span><ArrowRight size={17}/></button>
           })}</>}
       </section>}
-      {place.page === "People" && <section className="index-leaf">
-        <h1>Names in the margins</h1>
-        <button className="write-line" onClick={()=>setPersonForm(!personForm)}><Plus size={17}/> Add a person</button>
+      {place.page === "People" && place.key && people[place.key] && (() => {
+        const id = place.key
+        const ordered = [...entries].sort((a,b)=>b.date.localeCompare(a.date))
+        return <PersonProfile key={id} personId={id} person={people[id]} change={patch=>setPeople(previous=>({...previous,[id]:{...previous[id],...patch}}))}
+          memories={ordered.filter(entry=>aboutPerson(entry,id) || participant(entry,id,people) || writtenAbout(entry,id))} renderMemory={pageEntry}
+          memoryContext={entry=>[
+            aboutPerson(entry,id) && "About them",
+            participant(entry,id,people) && "They were there",
+            writtenAbout(entry,id) && "Mentioned",
+          ].filter(Boolean).join(" · ")}
+          write={phaseId=>write(undefined,phaseId)} assignPhase={(entry,phaseId)=>{
+            const other = (entry.about ?? []).filter(link=>link.personId!==id)
+            const phaseOnly = !aboutPerson(entry,id)
+            change(entry.id,{about:phaseId || !phaseOnly ? [...other,{personId:id,phaseId:phaseId || undefined,phaseOnly}] : other})
+          }}
+          />
+      })()}
+      {place.page === "People" && !place.key && <section className="index-leaf">
+        <h1>People</h1>
+        <button className="write-line" id="add-person" onClick={()=>setPersonForm(!personForm)}><Plus size={17}/> Add a person</button>
         {personForm && <form className="margin-form" onSubmit={event=>{
           event.preventDefault()
           const name=newPerson.trim()
           if(!name) return
           const id=crypto.randomUUID()
           setPeople(previous=>({...previous,[id]:{name,note:""}}))
-          setNewPerson("");setPersonForm(false)
-        }}><label>New person's name<input autoFocus required maxLength={100} value={newPerson} onChange={event=>setNewPerson(event.target.value)}/></label><button className="write-line">Add person</button></form>}
-        {!Object.keys(people).length && <p>Add someone here, then type @ followed by their name in a story.</p>}
-        {Object.entries(people).map(([id,record]) => {
-          const references = entries.filter(entry => mentions(entry.text,id))
-          return <details className="name-index" key={id} open={expandedPeople[id] ?? false} onToggle={event => {
-            const open = event.currentTarget.open
-            setExpandedPeople(previous => !!previous[id] === open ? previous : {...previous,[id]:open})
-          }}><summary>{record.name}<small>{references.length} {references.length === 1 ? "mention" : "mentions"}</small></summary>
-            <div className="margin-form">
-              <label>Name<input value={record.name} maxLength={100} onChange={event=>{const name=event.target.value;setPeople(previous=>({...previous,[id]:{...previous[id],name}}))}} onBlur={()=>{if (!record.name.trim()) setPeople(previous=>({...previous,[id]:{...previous[id],name:"Unnamed person"}}))}}/></label>
-              <label>About this person<textarea dir="auto" value={record.note} onChange={event=>{const note=event.target.value;setPeople(previous=>({...previous,[id]:{...previous[id],note}}))}}/></label>
-            </div>{references.map(entry => finding(entry,id))}</details>
-        })}
+          setNewPerson("");setPersonForm(false);setPeopleQuery("")
+          turn({page:"People",key:id},undefined,"add-person")
+        }}><label>New person's name<input dir="auto" autoFocus required maxLength={100} value={newPerson} onChange={event=>setNewPerson(event.target.value)}/></label><button className="write-line">Add person</button></form>}
+        {Object.keys(people).length ? <>
+          <div className="search-field"><Search size={19} aria-hidden="true"/><input className="find-line" type="search" aria-label="Find people" dir="auto" placeholder="Find by name or relationship" value={peopleQuery} onChange={event=>setPeopleQuery(event.target.value)}/></div>
+          {Object.entries(people).filter(([,record])=>searchKey([record.name,record.alsoKnownAs,record.relationship].join(" ")).includes(searchKey(peopleQuery.trim())))
+            .sort(([,a],[,b])=>a.name.localeCompare(b.name)).map(([id,record])=><button className="index-line" id={`person-${id}`} key={id} onClick={()=>turn({page:"People",key:id},undefined,`person-${id}`)}>
+              <span><bdi>{record.name}</bdi>{(record.relationship || record.alsoKnownAs) && <small dir="auto">{[record.relationship,record.alsoKnownAs].filter(Boolean).join(" · ")}</small>}</span><ArrowRight size={17}/>
+            </button>)}
+          {peopleQuery.trim() && !Object.values(people).some(record=>searchKey([record.name,record.alsoKnownAs,record.relationship].join(" ")).includes(searchKey(peopleQuery.trim()))) && <p role="status">No matching people.</p>}
+        </> : <p>Create a profile to write about someone or link them to memories.</p>}
       </section>}
       {place.page === "Find" && <section className="index-leaf"><h1>Find a memory</h1>
         <div className="search-field"><Search size={19} aria-hidden="true"/><input className="find-line" type="search" aria-label="Search your notebook" placeholder="A word, a name, a line…" autoFocus value={query} onChange={event => setQuery(event.target.value)}/></div>
-        {query.trim() && (matches.length ? matches.map(entry => finding(entry,"search")) : <>
+        <div className="search-filters">
+          <label>Person<select value={filters.person} onChange={event=>setFilters({...filters,person:event.target.value})}><option value="">Anyone</option>{Object.entries(people).map(([id,person])=><option key={id} value={id}>{person.name}</option>)}</select></label>
+          <label>Chapter<select value={filters.chapter} onChange={event=>setFilters({...filters,chapter:event.target.value})}><option value="">Any chapter</option>{chapterNames.map(name=><option key={name}>{name}</option>)}</select></label>
+          <label>Year<select value={filters.year} onChange={event=>setFilters({...filters,year:event.target.value})}><option value="">Any year</option>{filterYears.map(year=><option key={year}>{year}</option>)}</select></label>
+          <label className="photos-filter"><input type="checkbox" checked={filters.photos} onChange={event=>setFilters({...filters,photos:event.target.checked})}/>Has photos</label>
+        </div>
+        {(query.trim() || hasFilters) && (matches.length ? matches.map(entry => finding(entry,"search")) : <>
           <p className="empty-state" role="status">No matching memories. Try a title, caption, or person’s name.</p>
-          <button className="write-line" onClick={() => {setQuery("");document.querySelector<HTMLInputElement>(".find-line")?.focus()}}>Clear search</button>
+          <button className="write-line" onClick={() => {setQuery("");setFilters({person:"",chapter:"",year:"",photos:false});document.querySelector<HTMLInputElement>(".find-line")?.focus()}}>Clear search</button>
         </>)}
       </section>}
+      {place.page === "Album" && <AlbumForm entries={entries} chapters={chapterNames} activeChapter={place.key} format={format} close={back} submit={async (selected,title)=>{
+        setWorking(true)
+        setActivity("Preparing readable album…")
+        setIssue("")
+        setNotice("")
+        try {
+          const result = await exportAlbum(selected,title,format,people,persistent)
+          if (result.saved) setNotice(result.missing ? `Album exported. ${result.missing} attachments could not be included.` : "Readable album exported.")
+        } catch (error) {setIssue(String(error))}
+        finally {setWorking(false)}
+      }}/>}
       {place.page === "Deleted" && <section className="index-leaf"><h1>Recently deleted</h1>
         {!deleted.length && <p>No deleted memories.</p>}
-        {deleted.map(entry=><div className="index-line" key={entry.id}><span>{entry.title || "Untitled memory"}<small>{format(entry.date)}</small></span><button className="write-line" onClick={()=>{
+        {deleted.map(entry=><div className="index-line" key={entry.id}><span>{entry.title || "Untitled memory"}<small>{format(entry.date,entry.timing)}</small></span><button className="write-line" onClick={()=>{
           restore(entry, undo?.entry.id === entry.id ? undo.index : entries.length)
           turn({page:"Notebook"},entry.id)
         }}>Restore</button></div>)}
       </section>}
-      <footer className="book-end"><button id="open-deleted" onClick={()=>turn({page:"Deleted"},undefined,"open-deleted")}>Recently deleted{deleted.length ? ` (${deleted.length})` : ""}</button>
+      <footer className="book-end"><button id="export-album" onClick={()=>turn({page:"Album",key:place.page === "Chapters" ? place.key : undefined},undefined,"export-album")}>Export HTML album</button><button id="open-deleted" onClick={()=>turn({page:"Deleted"},undefined,"open-deleted")}>Recently deleted{deleted.length ? ` (${deleted.length})` : ""}</button>
         {persistent && <><button ref={backupButton} disabled={working} onClick={()=>void archiveAction("backup")}>Export encrypted backup</button><button disabled={working} onClick={()=>void archiveAction("lock")}>Lock</button></>}
         {!persistent && isTauri() && <button onClick={close}>Return to notebook cover</button>}
       </footer>
@@ -600,7 +681,8 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
       onClick={dismissOnBackdrop}>
       {person && people[person] && <><button className="note-close" aria-label="Close person note" onClick={() => note.current?.close()}><X size={17}/></button>
         <h2 dir="auto">{people[person].name}</h2><p dir="auto">{people[person].note}</p>
-        {entries.filter(entry => mentions(entry.text,person)).map(entry => <button className="note-reference" key={entry.id} onClick={() => {note.current?.close();turn({page:"Notebook"},entry.id)}}>{entry.title || "Untitled memory"} <ArrowRight size={14}/></button>)}
+        <button className="write-line" onClick={()=>{note.current?.close();turn({page:"People",key:person})}}>Open profile</button>
+        {entries.filter(entry => writtenAbout(entry,person)).map(entry => <button className="note-reference" key={entry.id} onClick={() => {note.current?.close();turn({page:"Notebook"},entry.id)}}>{entry.title || "Untitled memory"} <ArrowRight size={14}/></button>)}
       </>}
     </dialog>
     <dialog ref={lightbox} className="lightbox" aria-label="Photographs" onClose={() => {

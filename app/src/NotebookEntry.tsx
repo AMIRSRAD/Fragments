@@ -1,13 +1,17 @@
 import { memo, useId, useRef, useState } from "react"
 import { ImagePlus, Plus, Star, Trash2, X } from "lucide-react"
-import { type Memory, type People, type PersonId } from "./memories"
+import { type Memory, type People, type PersonId, type PersonMemoryLink } from "./memories"
 import { StoryInk } from "./StoryInk"
 import { convertFileSrc } from "@tauri-apps/api/core"
 import { DateSlip } from "./DateSlip"
 
+import { MemoryNotes } from "./MemoryNotes"
+import type { Timing } from "./dates"
+
+export type Reflection = { id: string; date: string; text: string }
 export type Media = { id: string; mime: string; caption: string; url?: string }
 export type Photograph = { id: string; url: string; caption: string }
-export type Entry = Memory & { imageUrl?: string; imageName?: string; media?: Media[]; cover?: string }
+export type Entry = Memory & { imageUrl?: string; imageName?: string; media?: Media[]; cover?: string; timing?: Timing; reflections?: Reflection[]; about?: PersonMemoryLink[] }
 
 export function attachments(entry: Entry): Media[] {
   if (entry.media) return entry.media
@@ -16,14 +20,14 @@ export function attachments(entry: Entry): Media[] {
   return []
 }
 
-function mediaUrl(entry: Entry, item: Media) {
+export function mediaUrl(entry: Entry, item: Media) {
   if (item.id === "sample-cover") return "/caspian.png"
   if (item.id === "legacy-cover") return entry.imageUrl ?? ""
   return item.url ?? convertFileSrc(`${item.id}/${item.mime.split("/")[1]}`, "notebook-media").replace("%2F","/")
 }
 type Props = {
   entry: Entry
-  format: (date: string) => string
+  format: (date: string, timing?: Timing) => string
   actions: {
     change: (id: string, patch: Partial<Entry>) => void
     identify: (person: PersonId, anchor: HTMLElement) => void
@@ -69,10 +73,10 @@ export const NotebookEntry = memo(function NotebookEntry({ entry, format, action
       attach(Array.from(event.dataTransfer.files))
     }}>
     <div className="entry-date">
-      <button className="ink-label" ref={dateControl} onClick={() => setDateOpen(true)} aria-haspopup="dialog" aria-expanded={dateOpen} aria-controls={dateOpen ? uid : undefined}>{entry.date ? format(entry.date) : "Add a date"}</button>
+      <button className="ink-label" ref={dateControl} onClick={() => setDateOpen(true)} aria-haspopup="dialog" aria-expanded={dateOpen} aria-controls={dateOpen ? uid : undefined}>{entry.date ? format(entry.date,entry.timing) : "Add a date"}</button>
       <span aria-hidden="true">·</span>
       <select aria-label="Chapter" value={entry.chapter} onChange={event => change({chapter: event.target.value})}>{[...new Set([entry.chapter, ...chapters])].map(chapter => <option key={chapter}>{chapter}</option>)}</select>
-      {dateOpen && <DateSlip id={uid} date={entry.date} calendar={calendar} close={closeDate} apply={date=>{change({date});closeDate()}}/>}
+      {dateOpen && <DateSlip id={uid} date={entry.date} timing={entry.timing} calendar={calendar} close={closeDate} apply={(date,timing)=>{change({date,timing});closeDate()}}/>}
     </div>
     <h2 className="entry-heading" aria-label={entry.title || "Untitled memory"}><textarea aria-label="Memory title" rows={1} value={entry.title} placeholder="Give this a title" dir="auto"
       onKeyDown={event => { if (event.key === "Enter" && !event.nativeEvent.isComposing) event.preventDefault() }}
@@ -95,6 +99,7 @@ export const NotebookEntry = memo(function NotebookEntry({ entry, format, action
       })}
     </div>}
     <StoryInk editorId={`story-${entry.id}`} value={entry.text} change={text => change({text})} identify={identify} people={people}/>
+    <MemoryNotes entry={entry} people={people} identify={identify} change={change} format={format}/>
     <div className="entry-tools">
       <button className="add-media" onClick={() => nativeMedia ? attach([]) : file.current?.click()}><ImagePlus size={15}/>Add media</button>
       <button className="write-here" onClick={() => actions.write(entry)}><Plus size={15}/>Write here</button>

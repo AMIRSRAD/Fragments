@@ -484,3 +484,56 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .bookmarks { grid-row: 3 }
   .journal-status { grid-row: 4 }
 }
+
+.memory-notes { display: grid; gap: 8px; margin-block: 12px; color: var(--muted) }
+.memory-notes > .write-line { justify-self: start }
+.memory-notes summary { cursor: pointer; font-size: .875rem }
+.participants { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-block: 10px }
+.participants label, .photos-filter { display: flex; align-items: center; gap: 6px }
+.reflection { padding: 12px 16px; border-inline-start: 2px solid var(--rule); background: #f6ead880; color: var(--ink) }
+.reflection h3 { font-size: 25px }
+.reflection h3 small { color: var(--muted); font: .78rem "DM Sans", sans-serif }
+.flexible-date, .search-filters { display: grid; gap: 10px; margin-block: 12px 20px }
+.search-filters { grid-template-columns: repeat(auto-fit,minmax(min(100%, 135px),1fr)); align-items: end }
+.flexible-date label, .search-filters label:not(.photos-filter) { display: grid; gap: 4px; font-size: .82rem; min-width: 0 }
+.search-filters select, .margin-form select { min-width: 0; min-height: 36px; border: 1px solid var(--rule); border-radius: var(--control-radius); background: var(--paper); color: var(--ink); padding: 4px 8px }
+.photos-filter { min-height: 36px; font-size: .875rem }
+.album-choice { display: flex; align-items: baseline; gap: 12px; padding-block: 10px; border-bottom: 1px solid var(--rule); overflow-wrap: anywhere }
+.album-choice small { display: block; color: var(--muted) }
+.name-index h3 { font-size: 28px; margin-block: 15px 8px }
+
+input[type="checkbox"] { accent-color: var(--accent) }
+.person-fields { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%, 190px),1fr)); gap: 14px; margin-block: 20px }
+.person-fields label { display: grid; gap: 5px; color: var(--muted); font-size: .85rem }
+.person-fields input, .person-fields textarea, .person-writing textarea {
+  min-width: 0; width: 100%; min-height: 38px; padding: 8px 10px;
+  border: 1px solid var(--rule); border-radius: var(--control-radius);
+  background: #fffdf7; color: var(--ink); font: inherit;
+}
+.person-fields .person-summary { grid-column: 1 / -1 }
+.person-fields textarea, .person-writing textarea { resize: vertical; line-height: 1.7 }
+.person-writing { padding-block: 18px; border-block: 1px solid var(--rule) }
+.person-profile h2 { font-size: 36px }
+.person-writing p { margin-top: 5px; color: var(--muted); font-size: .9rem }
+.person-timeline { margin-top: 24px }
+.person-timeline h3 { font-size: 26px; margin-block: 16px 5px }
+.reflection-hint { margin: 0; font-size: .875rem }
+.about-links { display: grid; gap: 8px; margin-block: 10px }
+.about-link, .phase-memory { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px }
+.about-link label { display: inline-flex; gap: 6px; align-items: center }
+.about-link select, .phase-memory select, .person-phase h3 input {
+  max-width: 100%; min-height: 34px; padding: 4px 8px; border: 1px solid var(--rule);
+  border-radius: var(--control-radius); color: var(--ink); background: var(--paper);
+}
+.phase-memory .index-line { flex: 1 1 190px; min-width: 0 }
+.person-phase { border-block-start: 1px solid var(--rule); margin-block: 14px; padding-block: 8px }
+.person-phase h3 input { width: 100%; font: inherit }
+
+.person-profile-actions, .phase-memory-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px }
+.person-profile-actions a { text-decoration: none }
+#person-memories { scroll-margin-top: calc(var(--title-bar-height) + var(--sticky-header-height) + 16px) }
+.phase-memory { display: block; margin-block: 20px; padding: clamp(12px, 3vw, 24px); border: 1px solid var(--rule); border-radius: var(--control-radius); background: #fffdf7 }
+.phase-memory-meta { justify-content: space-between; margin-bottom: 10px; color: var(--muted); font-size: .82rem }
+.phase-memory-meta select { margin-inline-start: 5px }
+.phase-memory .notebook-entry { scroll-margin-top: calc(var(--title-bar-height) + var(--sticky-header-height) + 16px) }
+.phase-memory .entry-heading textarea { font-size: clamp(30px, 5vw, 52px) }

@@ -292,6 +292,28 @@ pub async fn backup_archive(app: AppHandle) -> Result<bool, String> {
     .map_err(message)?
 }
 
+#[tauri::command]
+pub async fn save_readable_album(html: String) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(destination) = rfd::FileDialog::new()
+            .set_file_name("fragments-album.html")
+            .add_filter("HTML album", &["html"])
+            .save_file()
+        else {
+            return Ok(false);
+        };
+        let mut output = OpenOptions::new().write(true).create_new(true).open(&destination)
+            .map_err(|error| format!("Choose a new album filename. {error}"))?;
+        let result = output.write_all(html.as_bytes()).and_then(|()| output.sync_all());
+        drop(output);
+        if let Err(error) = result {
+            let _ = fs::remove_file(destination);
+            return Err(message(error));
+        }
+        Ok(true)
+    }).await.map_err(message)?
+}
+
 fn write_bundle(session: &Session, destination: &Path) -> Result<(), String> {
     let snapshot = path(&session.directory, session.generation);
     let envelope: Snapshot = serde_json::from_str(&read_snapshot(&snapshot)?).map_err(message)?;

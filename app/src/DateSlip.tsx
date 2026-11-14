@@ -2,6 +2,9 @@ import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Keyb
 import { ChevronLeft, ChevronRight, X } from "lucide-react"
 import { jalaaliMonthLength, toGregorian, toJalaali } from "jalaali-js"
 
+import { FlexibleDate } from "./FlexibleDate"
+import type { Timing } from "./dates"
+
 type Calendar = "gregory" | "persian"
 type DateParts = { year: number; month: number; day: number }
 
@@ -40,13 +43,15 @@ function monthLength(year: number, month: number, calendar: Calendar) {
   return calendar === "persian" ? jalaaliMonthLength(year, month) : gregorianDate({year, month: month + 1, day: 0}).getUTCDate()
 }
 
-export function DateSlip({date, calendar, apply, close, id}: {
+export function DateSlip({date, timing, calendar, apply, close, id}: {
   date: string
   calendar: string
-  apply: (date: string) => void
+  timing?: Timing
+  apply: (date: string, timing?: Timing) => void
   close: () => void
   id: string
 }) {
+  const [flexible,setFlexible] = useState(Boolean(timing))
   const dialog = useRef<HTMLDialogElement>(null)
   const [initial] = useState(() => {
     const now = new Date()
@@ -61,7 +66,7 @@ export function DateSlip({date, calendar, apply, close, id}: {
   const [mode, setMode] = useState<Calendar>(initial.mode)
   const [{year, month, day}, setDate] = useState(initial.date)
   const [yearText, setYearText] = useState(String(year))
-  const [hasDate, setHasDate] = useState(Boolean(date))
+  const [hasDate, setHasDate] = useState(Boolean(date && !timing))
   const [error, setError] = useState("")
   const grid = useRef<HTMLDivElement>(null)
   const nextFocus = useRef<number | null>(null)
@@ -121,14 +126,14 @@ export function DateSlip({date, calendar, apply, close, id}: {
     close()
   }
 
-  function commit(value: string) {
+  function commit(value: string, timing?: Timing) {
     dialog.current?.close()
-    apply(value)
+    apply(value,timing)
   }
 
   function submit(event: FormEvent) {
     event.preventDefault()
-    if (!validYear || !hasDate) return
+    if (flexible || !validYear || !hasDate) return
     commit(gregorianDate(inGregorian({year, month, day}, mode)).toISOString().slice(0, 10))
   }
 
@@ -167,6 +172,8 @@ export function DateSlip({date, calendar, apply, close, id}: {
         <h2 id={id + "-heading"}>Memory date</h2>
         <button className="icon-button" type="button" aria-label="Close date picker" onClick={dismiss}><X size={19}/></button>
       </div>
+      <button className="write-line" type="button" onClick={()=>setFlexible(!flexible)}>{flexible ? "Choose an exact day" : "Month, year, or approximate date"}</button>
+      {flexible ? <FlexibleDate date={date} timing={timing} calendar={calendar} apply={commit}/> : <>
       <label className="picker-calendar">Calendar
         <select autoFocus value={mode} disabled={!validYear} onChange={event => switchCalendar(event.target.value as Calendar)}>
           <option value="gregory">Gregorian</option><option value="persian">Persian</option>
@@ -206,6 +213,7 @@ export function DateSlip({date, calendar, apply, close, id}: {
         <button className="write-line" type="button" disabled={!date} onClick={() => commit("")}>Clear date</button>
         <button className="primary-action" type="submit" disabled={!validYear || !hasDate}>Apply date</button>
       </div>
+      </>}
     </form>
   </dialog>
 }

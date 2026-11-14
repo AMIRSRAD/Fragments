@@ -9,7 +9,19 @@ export const storyPeople = {
   leila: { name: "Leila", note: "A familiar face in the childhood memories." },
 }
 export type PersonId = string
-export type People = Record<PersonId, { name: string; note: string }>
+export type PersonPhase = { id: string; name: string }
+export type PersonMemoryLink = { personId: PersonId; phaseId?: string; phaseOnly?: boolean }
+export type Person = {
+  name: string
+  note: string
+  alsoKnownAs?: string
+  relationship?: string
+  whereWeMet?: string
+  birthday?: string
+  writing?: string
+  phases?: PersonPhase[]
+}
+export type People = Record<PersonId, Person>
 export const mentionPattern = /\[((?:[^\]\n\\]|\\[\]\\]|\\(?![\]\\]))+)\]\(fragments:person\/([a-z0-9-]+)\)/g
 export const mentionLabel = (value: string) => value.replace(/\\([\]\\])/g, "$1")
 export const storyText = (value: string) => value.replace(mentionPattern, (_, label: string) => mentionLabel(label))
