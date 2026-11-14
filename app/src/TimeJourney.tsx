@@ -10,6 +10,7 @@ export function TimeJourney({years, entriesByYear, renderEntry}: {
   const [active,setActive] = useState(years[0])
   const journal = useRef<HTMLDivElement>(null)
   const bookmarks = useRef<HTMLElement>(null)
+  const yearKey = years.join("|")
   function jumpToYear(year: string, immediate = false) {
     document.getElementById(`year-${year}`)?.scrollIntoView({
       behavior: immediate || matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
@@ -23,13 +24,23 @@ export function TimeJourney({years, entriesByYear, renderEntry}: {
   }
 
   useEffect(() => {
+    const leaves = Array.from(journal.current?.querySelectorAll<HTMLElement>("[data-year]") ?? [])
+    if (!leaves.length) return
     let frame = 0
     function follow() {
       cancelAnimationFrame(frame)
       frame = requestAnimationFrame(() => {
-        const leaves = Array.from(journal.current?.querySelectorAll<HTMLElement>("[data-year]") ?? [])
-        const line = window.innerHeight * .44
-        const leaf = leaves.find(item => item.getBoundingClientRect().bottom > line) ?? leaves.at(-1)
+        const railBottom = bookmarks.current?.parentElement?.getBoundingClientRect().bottom ?? 0
+        const line = Math.max(window.innerHeight * .44, Math.min(railBottom + 1, window.innerHeight - 1))
+        // Year sections are in document order, so their bottom edges are ordered.
+        let low = 0
+        let high = leaves.length - 1
+        while (low < high) {
+          const middle = Math.floor((low + high) / 2)
+          if (leaves[middle].getBoundingClientRect().bottom > line) high = middle
+          else low = middle + 1
+        }
+        const leaf = leaves[low]
         if (!leaf?.dataset.year) return
         setActive(leaf.dataset.year)
         const { top, height } = leaf.getBoundingClientRect()
@@ -47,7 +58,7 @@ export function TimeJourney({years, entriesByYear, renderEntry}: {
       window.removeEventListener("resize",follow)
       window.removeEventListener("focusin",follow)
     }
-  }, [years.join("|")])
+  }, [yearKey])
 
   useEffect(() => {
     const rail = bookmarks.current
@@ -73,7 +84,18 @@ export function TimeJourney({years, entriesByYear, renderEntry}: {
     }
     observePages()
     const changes = new MutationObserver(records => {
-      if (records.some(record => [...record.addedNodes].some(node => node instanceof HTMLElement && (node.matches(".notebook-entry") || node.querySelector(".notebook-entry"))))) observePages()
+      for (const record of records) {
+        for (const node of record.removedNodes) {
+          if (!(node instanceof HTMLElement)) continue
+          if (node.matches(".notebook-entry")) observer.unobserve(node)
+          node.querySelectorAll(".notebook-entry").forEach(entry => observer.unobserve(entry))
+        }
+        for (const node of record.addedNodes) {
+          if (!(node instanceof HTMLElement)) continue
+          if (node.matches(".notebook-entry:not(.ink-arrived)")) observer.observe(node)
+          node.querySelectorAll(".notebook-entry:not(.ink-arrived)").forEach(entry => observer.observe(entry))
+        }
+      }
     })
     if (container) changes.observe(container, { childList: true, subtree: true })
     return () => { observer.disconnect(); changes.disconnect() }
