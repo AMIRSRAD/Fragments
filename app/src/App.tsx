@@ -135,6 +135,20 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
   const returnPoint = useRef<ReturnPoint | null>(null)
   const [calendar, setCalendar] = useState(initial.calendar)
   const [query, setQuery] = useState("")
+  const bookCover = useRef<HTMLElement>(null)
+  useLayoutEffect(() => {
+    const cover = bookCover.current
+    if (!cover) return
+    const root = document.documentElement
+    const measure = () => root.style.setProperty("--measured-header-height", `${cover.getBoundingClientRect().height}px`)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(cover, {box:"border-box"})
+    return () => {
+      observer.disconnect()
+      root.style.removeProperty("--measured-header-height")
+    }
+  }, [])
   const [pending, setPending] = useState<{id:string; focus?: "title" | "date" | "media"} | null>(null)
   const [person, setPerson] = useState<PersonId | null>(null)
   const [viewer, setViewer] = useState<{photos: Photograph[]; index: number; trigger: HTMLButtonElement} | null>(null)
@@ -469,7 +483,7 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
   }
 
   return <>
-    <header className="book-cover" inert={working || closing}>
+    <header ref={bookCover} className="book-cover" inert={working || closing}>
       <div className="cover-name"><Feather size={19}/><button onClick={() => selectTab("Notebook")}>Fragments</button></div>
       <nav aria-label="Notebook bookmarks" className="bookmarks">
         {bookmarks.map(({page, Icon}) => <button key={page} aria-current={place.page === page ? "page" : undefined} onClick={() => selectTab(page)}><Icon size={16} aria-hidden="true"/>{page}</button>)}

@@ -153,6 +153,7 @@ dialog { color: #382b23 }
   --rule: #dbcbb7;
   --title-bar-height: 0px;
   --header-height: 88px;
+  --sticky-header-height: var(--measured-header-height, var(--header-height));
   --year-bar-height: 55px;
   --serif: Vazirmatn, "Instrument Serif", Georgia, serif;
   color-scheme: light;
@@ -238,7 +239,7 @@ button:disabled { cursor: default }
 }
 .year-bar {
   position: sticky;
-  top: calc(var(--title-bar-height) + var(--header-height));
+  top: calc(var(--title-bar-height) + var(--sticky-header-height));
   z-index: 3;
   display: flex;
   align-items: center;
@@ -271,18 +272,18 @@ button:disabled { cursor: default }
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, .76fr) minmax(0, 1.24fr);
-  scroll-margin-top: calc(var(--title-bar-height) + var(--header-height) + var(--year-bar-height));
+  scroll-margin-top: calc(var(--title-bar-height) + var(--sticky-header-height) + var(--year-bar-height));
   border-bottom: 1px solid var(--rule);
   background: linear-gradient(90deg, var(--left-page) 35%, #eee0ca 38%, #f9f0e0 38.15%, var(--paper) 41%);
 }
 .year-front {
   position: sticky;
-  top: calc(var(--title-bar-height) + var(--header-height) + var(--year-bar-height));
+  top: calc(var(--title-bar-height) + var(--sticky-header-height) + var(--year-bar-height));
   align-self: start;
   min-width: 0;
   padding: clamp(30px, 5vw, 74px) clamp(24px, 5vw, 72px) 30px;
   color: var(--accent);
-  max-height: calc(100dvh - var(--title-bar-height) - var(--header-height) - var(--year-bar-height));
+  max-height: calc(100dvh - var(--title-bar-height) - var(--sticky-header-height) - var(--year-bar-height));
   overflow: auto;
 }
 .year-front h1 { font-size: clamp(79px, 12vw, 166px); line-height: .87; letter-spacing: -.055em }
@@ -308,7 +309,7 @@ button:disabled { cursor: default }
 .year-contents button svg { color: var(--accent) }
 .year-contents button:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 3px }
 .leaf-writing { min-width: 0; padding: clamp(25px, 4.4vw, 60px) clamp(25px, 5vw, 76px) 32px }
-.notebook-entry { position: relative; scroll-margin-top: calc(var(--title-bar-height) + var(--header-height) + var(--year-bar-height) + 16px); padding-bottom: 20px; margin-bottom: 30px; border-bottom: 1px solid var(--rule) }
+.notebook-entry { position: relative; scroll-margin-top: calc(var(--title-bar-height) + var(--sticky-header-height) + var(--year-bar-height) + 16px); padding-bottom: 20px; margin-bottom: 30px; border-bottom: 1px solid var(--rule) }
 .notebook-entry:focus-within { z-index: 2 }
 .notebook-entry:focus .entry-heading { color: var(--accent) }
 .notebook-entry:focus-visible, .notebook-body:focus-visible { outline: 2px solid var(--accent); outline-offset: 5px }
@@ -399,7 +400,7 @@ button:disabled { cursor: default }
   .media-gallery { grid-template-columns: minmax(0, 1fr) }
 }
 @media (max-height: 420px) {
-  :root { --header-height: 0px }
+  :root { --header-height: 0px; --sticky-header-height: 0px }
   .book-cover { position: relative }
 }
 
