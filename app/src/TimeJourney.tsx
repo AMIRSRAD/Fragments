@@ -10,6 +10,11 @@ export function TimeJourney({years, entriesByYear, renderEntry}: {
   const [active,setActive] = useState(years[0])
   const journal = useRef<HTMLDivElement>(null)
   const bookmarks = useRef<HTMLElement>(null)
+  function jumpToYear(year: string, immediate = false) {
+    document.getElementById(`year-${year}`)?.scrollIntoView({
+      behavior: immediate || matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+    })
+  }
 
   function jumpToMemory(id: string) {
     const entry = document.getElementById(`entry-${id}`)
@@ -77,8 +82,17 @@ export function TimeJourney({years, entriesByYear, renderEntry}: {
   return <div ref={journal}>
     <div className="year-bar">
     <nav ref={bookmarks} className="year-thread" aria-label="Jump to year">
-      {years.map(year => <button key={year} aria-current={active === year ? "location" : undefined} onClick={() => document.getElementById(`year-${year}`)?.scrollIntoView({behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth"})}>{year}</button>)}
+      {years.map(year => <button key={year} aria-current={active === year ? "location" : undefined} onClick={() => jumpToYear(year)}>{year}</button>)}
     </nav>
+    {years.length > 0 && <label className="compact-year">
+      <span>Year</span>
+      <select aria-label="Jump to year" value={years.includes(active) ? active : years[0]} onChange={event => {
+        setActive(event.target.value)
+        jumpToYear(event.target.value, true)
+      }}>
+        {years.map(year => <option key={year}>{year}</option>)}
+      </select>
+    </label>}
     </div>
     {years.map(year => {
       const entries = entriesByYear.get(year) ?? []

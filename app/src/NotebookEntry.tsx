@@ -6,6 +6,7 @@ import { convertFileSrc } from "@tauri-apps/api/core"
 import { DateSlip } from "./DateSlip"
 
 export type Media = { id: string; mime: string; caption: string; url?: string }
+export type Photograph = { id: string; url: string; caption: string }
 export type Entry = Memory & { imageUrl?: string; imageName?: string; media?: Media[]; cover?: string }
 
 export function attachments(entry: Entry): Media[] {
@@ -27,7 +28,7 @@ type Props = {
     change: (id: string, patch: Partial<Entry>) => void
     identify: (person: PersonId, anchor: HTMLElement) => void
     write: (entry: Entry) => void
-    viewPhoto: (url: string, label: string) => void
+    viewPhoto: (photos: Photograph[], id: string, trigger: HTMLButtonElement) => void
     attach: (id: string, files: File[]) => void
     remove: (entry: Entry) => void
   }
@@ -49,6 +50,11 @@ export const NotebookEntry = memo(function NotebookEntry({ entry, format, action
   const cover = items.find(item => item.id === entry.cover) ?? items[0]
   const gallery = cover ? [cover,...items.filter(item=>item.id!==cover.id)] : []
   const [failed,setFailed] = useState<string[]>([])
+  function openPhoto(id: string, trigger: HTMLButtonElement) {
+    const photos = gallery.filter(item => !item.mime.startsWith("video/") && !failed.includes(item.id))
+      .map(item => ({id:item.id, url:mediaUrl(entry,item), caption:item.caption}))
+    viewPhoto(photos,id,trigger)
+  }
   function closeDate() {
     setDateOpen(false)
     dateControl.current?.focus({preventScroll:true})
@@ -77,7 +83,7 @@ export const NotebookEntry = memo(function NotebookEntry({ entry, format, action
         return <figure className={`photo-print media-print${item.id===cover?.id ? " cover-print" : ""}`} key={item.id}>
           {failed.includes(item.id) ? <div className="media-unavailable"><p>Preview unavailable.</p><button className="write-line" onClick={()=>setFailed(previous=>previous.filter(id=>id!==item.id))}>Retry preview</button></div> : item.mime.startsWith("video/") ?
             <video src={url} controls preload="none" aria-label={item.caption || "Video"} onError={()=>setFailed(previous=>[...previous,item.id])}/> :
-            <button className="print-image" aria-label={item.caption ? `Enlarge photograph: ${item.caption}` : "Enlarge photograph"} onClick={()=>viewPhoto(url,item.caption)}><img src={url} alt={item.caption} loading="lazy" onError={()=>setFailed(previous=>[...previous,item.id])}/></button>}
+            <button className="print-image" aria-haspopup="dialog" aria-label={item.caption ? `Enlarge photograph: ${item.caption}` : "Enlarge photograph"} onClick={event=>openPhoto(item.id,event.currentTarget)}><img src={url} alt={item.caption} loading="lazy" onError={()=>setFailed(previous=>[...previous,item.id])}/></button>}
           <figcaption><input dir="auto" value={item.caption} aria-label="Media caption" placeholder="Write a caption" onChange={event=>change({media:items.map(value=>value.id===item.id ? {...value,caption:event.target.value} : value)})}/>
           <div className="print-actions">
             <button type="button" className="icon-button" aria-label={item.id===cover?.id ? "Cover media" : "Make cover"} aria-pressed={item.id===cover?.id} title={item.id===cover?.id ? "Cover media" : "Make cover"} onClick={()=>change({cover:item.id})}><Star size={15} fill={item.id===cover?.id ? "currentColor" : "none"}/></button>
@@ -89,7 +95,7 @@ export const NotebookEntry = memo(function NotebookEntry({ entry, format, action
     <StoryInk editorId={`story-${entry.id}`} value={entry.text} change={text => change({text})} identify={identify} people={people}/>
     <div className="entry-tools">
       <button className="add-media" onClick={() => nativeMedia ? attach([]) : file.current?.click()}><ImagePlus size={15}/>Add media</button>
-      <button onClick={() => actions.write(entry)}><Plus size={15}/>Write here</button>
+      <button className="write-here" onClick={() => actions.write(entry)}><Plus size={15}/>Write here</button>
       <button className="icon-button trash-memory" aria-label="Move to Recently deleted" title="Move to Recently deleted" onClick={() => actions.remove(entry)}><Trash2 size={16}/></button>
       <input ref={file} type="file" hidden multiple accept="image/*,video/*" onChange={event => {
         attach(Array.from(event.currentTarget.files ?? []))

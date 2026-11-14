@@ -1,9 +1,9 @@
 import { invoke, isTauri } from "@tauri-apps/api/core"
 import { getCurrentWindow } from "@tauri-apps/api/window"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from "react"
-import { ArrowLeft, ArrowRight, BookOpen, Bookmark, CalendarDays, Feather, Plus, Search, Users, X } from "lucide-react"
+import { ArrowLeft, ArrowRight, BookOpen, Bookmark, CalendarDays, ChevronLeft, ChevronRight, Feather, Plus, Search, Users, X } from "lucide-react"
 import { chapters, mentions, sampleMemories, searchKey, storyPeople, storyText, type PersonId, type People } from "./memories"
-import { NotebookEntry, attachments, type Entry, type Media } from "./NotebookEntry"
+import { NotebookEntry, attachments, type Entry, type Media, type Photograph } from "./NotebookEntry"
 import { TimeJourney } from "./TimeJourney"
 import { TitleBar } from "./TitleBar"
 import "@fontsource/instrument-serif"
@@ -137,7 +137,8 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
   const [query, setQuery] = useState("")
   const [pending, setPending] = useState<{id:string; focus?: "title" | "date" | "media"} | null>(null)
   const [person, setPerson] = useState<PersonId | null>(null)
-  const [photo, setPhoto] = useState<{url:string; label:string} | null>(null)
+  const [viewer, setViewer] = useState<{photos: Photograph[]; index: number; trigger: HTMLButtonElement} | null>(null)
+  const photo = viewer?.photos[viewer.index]
   const [notePosition, setNotePosition] = useState({top: 0, left: 0})
   const sampleMedia = useRef(new Set<string>())
   useEffect(() => {
@@ -150,6 +151,12 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
   const [issue,setIssue] = useState("")
   const [saveIssue,setSaveIssue] = useState("")
   const [notice,setNotice] = useState("")
+  const [undo, setUndo] = useState<{entry: Entry; index: number} | null>(null)
+  useEffect(() => {
+    if (!undo) return
+    const timer = window.setTimeout(() => setUndo(null), 10000)
+    return () => window.clearTimeout(timer)
+  }, [undo])
   const [working,setWorking] = useState(false)
   const [activity,setActivity] = useState("")
   const queue = useRef<Promise<void>>(Promise.resolve())
@@ -360,9 +367,9 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
       setPending({id,focus:"date"})
     }
     setEntries(previous => previous.map(entry => entry.id === id ? {...entry,...patch} : entry))
-    if (patch.chapter !== undefined && place.page === "Chapters" && place.key && patch.chapter !== place.key) {
+    if (patch.chapter !== undefined && patch.chapter !== previousEntry?.chapter) {
       setNotice(`Memory moved to ${patch.chapter}.`)
-      focusAfterRemoval(id)
+      if (place.page === "Chapters" && place.key && patch.chapter !== place.key) focusAfterRemoval(id)
     }
   }
 
@@ -382,15 +389,28 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
   }
 
   function remove(entry: Entry) {
+    setUndo({entry, index:entries.indexOf(entry)})
     setDeleted(previous => [...previous,entry])
     setEntries(previous => previous.filter(item => item.id !== entry.id))
-    setNotice("Memory moved to Recently deleted.")
     focusAfterRemoval(entry.id)
   }
 
-  function viewPhoto(url: string, label: string) {
-    setPhoto({url,label})
+  function restore(entry: Entry, index: number) {
+    setEntries(previous => previous.some(item => item.id === entry.id) ? previous :
+      [...previous.slice(0,index), entry, ...previous.slice(index)])
+    setDeleted(previous => previous.filter(item => item.id !== entry.id))
+    if (undo?.entry.id === entry.id) setUndo(null)
+  }
+
+  function viewPhoto(photos: Photograph[], id: string, trigger: HTMLButtonElement) {
+    const index = photos.findIndex(photo => photo.id === id)
+    if (index < 0) return
+    setViewer({photos,index,trigger})
     lightbox.current?.showModal()
+  }
+
+  function stepPhoto(delta: number) {
+    setViewer(current => current && ({...current, index: Math.max(0, Math.min(current.photos.length - 1, current.index + delta))}))
   }
 
   const latestActions = useRef({change, identify, write, viewPhoto, attach, remove})
@@ -401,7 +421,7 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
     change: (id: string, patch: Partial<Entry>) => latestActions.current.change(id,patch),
     identify: (id: PersonId, anchor: HTMLElement) => latestActions.current.identify(id,anchor),
     write: (entry: Entry) => latestActions.current.write(entry),
-    viewPhoto: (url: string, label: string) => latestActions.current.viewPhoto(url,label),
+    viewPhoto: (photos: Photograph[], id: string, trigger: HTMLButtonElement) => latestActions.current.viewPhoto(photos,id,trigger),
     attach: (id: string, files: File[]) => void latestActions.current.attach(id,files),
     remove: (entry: Entry) => latestActions.current.remove(entry),
   }), [])
@@ -430,6 +450,7 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
         <label className="calendar-choice"><CalendarDays size={16} aria-hidden="true"/><span className="sr-only">Display calendar</span><select value={calendar} onChange={event => setCalendar(event.target.value)}><option value="gregory">Gregorian</option><option value="persian">Persian</option></select></label>
         <button className="primary-action" id="write-memory" onClick={() => write()} aria-label="Write a memory"><Plus size={17} aria-hidden="true"/><span>Write<span className="wide-action-label"> a memory</span></span></button>
       </div>
+      <div className="journal-status" role="status">{working ? activity : status}</div>
     </header>
     <main className="book notebook-body" id="notebook-main" tabIndex={-1} inert={working}>
       {history.length > 0 && <button className="back-mark" onClick={back}><ArrowLeft size={15}/> Back</button>}
@@ -488,16 +509,17 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
       {place.page === "Deleted" && <section className="index-leaf"><h1>Recently deleted</h1>
         {!deleted.length && <p>No deleted memories.</p>}
         {deleted.map(entry=><div className="index-line" key={entry.id}><span>{entry.title || "Untitled memory"}<small>{format(entry.date)}</small></span><button className="write-line" onClick={()=>{
-          setEntries(previous=>[...previous,entry]);setDeleted(previous=>previous.filter(item=>item.id!==entry.id));turn({page:"Notebook"},entry.id)
+          restore(entry, undo?.entry.id === entry.id ? undo.index : entries.length)
+          turn({page:"Notebook"},entry.id)
         }}>Restore</button></div>)}
       </section>}
-      <footer className="book-end"><span role="status">{status}</span><button id="open-deleted" onClick={()=>turn({page:"Deleted"},undefined,"open-deleted")}>Recently deleted{deleted.length ? ` (${deleted.length})` : ""}</button>
+      <footer className="book-end"><button id="open-deleted" onClick={()=>turn({page:"Deleted"},undefined,"open-deleted")}>Recently deleted{deleted.length ? ` (${deleted.length})` : ""}</button>
         {persistent && <><button disabled={working} onClick={()=>void archiveAction("backup")}>Export encrypted backup</button><button disabled={working} onClick={()=>void archiveAction("lock")}>Lock</button></>}
         {!persistent && isTauri() && <button onClick={close}>Return to notebook cover</button>}
       </footer>
     </main>
     {working && <div className="media-status" role="status">{activity}</div>}
-    {!working && (saveIssue || issue || notice) && <aside className="save-issue">
+    {!working && (saveIssue || issue || notice || undo) && <aside className="save-issue">
       {saveIssue && <div className="notification"><span role="alert">{saveIssue}</span><button className="write-line" onClick={()=>{
         setStatus("Saving…")
         void save(currentSnapshot.current).then(()=>{
@@ -506,6 +528,11 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
         }).catch(error=>{setStatus("Changes pending");setSaveIssue(String(error))})
       }}>Retry save</button></div>}
       {(issue || notice) && <div className="notification"><span role={issue ? "alert" : "status"}>{issue || notice}</span><button className="icon-button" onClick={()=>issue ? setIssue("") : setNotice("")} aria-label="Dismiss message"><X size={16}/></button></div>}
+      {undo && <div className="notification"><span role="status">Memory moved to Recently deleted.</span><button className="write-line" onClick={()=>{
+        restore(undo.entry, undo.index)
+        setNotice("Memory restored.")
+        if (place.page !== "Deleted") setPending({id:undo.entry.id})
+      }}>Undo</button></div>}
     </aside>}
     <dialog ref={note} className="margin-note" aria-label="Person mentioned in the story" style={notePosition} onClose={() => setPerson(null)}
       onClick={dismissOnBackdrop}>
@@ -514,9 +541,26 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
         {entries.filter(entry => mentions(entry.text,person)).map(entry => <button className="note-reference" key={entry.id} onClick={() => {note.current?.close();turn({page:"Notebook"},entry.id)}}>{entry.title || "Untitled memory"} <ArrowRight size={14}/></button>)}
       </>}
     </dialog>
-    <dialog ref={lightbox} className="lightbox" aria-label="Photograph" onClose={() => setPhoto(null)} onClick={dismissOnBackdrop}>
-      <button className="note-close" aria-label="Close photograph" onClick={() => lightbox.current?.close()}><X size={21}/></button>
-      {photo && <img src={photo.url} alt={photo.label}/>}
+    <dialog ref={lightbox} className="lightbox" aria-label="Photographs" onClose={() => {
+      viewer?.trigger.focus({preventScroll:true})
+      setViewer(null)
+    }} onClick={dismissOnBackdrop} onKeyDown={event => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return
+      event.preventDefault()
+      stepPhoto(event.key === "ArrowLeft" ? -1 : 1)
+    }}>
+      <div className="photo-viewer-toolbar">
+        {viewer && viewer.photos.length > 1 && <>
+          <button className="icon-button" aria-label="Previous photograph" aria-disabled={viewer.index === 0} onClick={()=>stepPhoto(-1)}><ChevronLeft size={18}/></button>
+          <span role="status">{viewer.index + 1} / {viewer.photos.length}</span>
+          <button className="icon-button" aria-label="Next photograph" aria-disabled={viewer.index === viewer.photos.length - 1} onClick={()=>stepPhoto(1)}><ChevronRight size={18}/></button>
+        </>}
+        <button className="icon-button photo-viewer-close" aria-label="Close photograph" autoFocus onClick={() => lightbox.current?.close()}><X size={20}/></button>
+      </div>
+      {photo && <figure>
+        <img key={photo.id} src={photo.url} alt={photo.caption || "Journal photograph"}/>
+        {photo.caption && <figcaption dir="auto">{photo.caption}</figcaption>}
+      </figure>}
     </dialog>
   </>
 }
