@@ -158,6 +158,10 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
     return () => window.clearTimeout(timer)
   }, [undo])
   const [working,setWorking] = useState(false)
+  const [closing, setClosing] = useState(false)
+  const closeInProgress = useRef(false)
+  const busy = useRef(false)
+  busy.current = working
   const [activity,setActivity] = useState("")
   const queue = useRef<Promise<void>>(Promise.resolve())
   const snapshot = useMemo(() => ({entries,calendar,people,deleted,chapters:customChapters}), [entries,calendar,people,deleted,customChapters])
@@ -191,15 +195,39 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
 
   useEffect(() => {
     if (!persistent) return
-    const remove = getCurrentWindow().onCloseRequested(event => {
+    const appWindow = getCurrentWindow()
+    const remove = appWindow.onCloseRequested(event => {
+      if (busy.current) {
+        event.preventDefault()
+        setNotice("Finish or cancel the current operation before closing.")
+        return
+      }
+      if (closeInProgress.current) {
+        event.preventDefault()
+        return
+      }
       if (currentSnapshot.current === published.current) return
       event.preventDefault()
-      void save(currentSnapshot.current).then(() => {
-        setStatus("Saved on this device · you can close the window")
+      closeInProgress.current = true
+      setClosing(true)
+      setStatus("Saving before closing…")
+      void (async () => {
+        // Wait for the latest committed edit before destroying the window.
+        do {
+          await save(currentSnapshot.current)
+        } while (currentSnapshot.current !== published.current)
         setSaveIssue("")
-      }).catch(error=>{setStatus("Changes pending");setSaveIssue(String(error))})
+        setStatus("Saved on this device")
+        await appWindow.destroy()
+      })().catch(error => {
+        setStatus(currentSnapshot.current === published.current ? "Saved on this device" : "Changes pending")
+        setSaveIssue(String(error))
+      }).finally(() => {
+        closeInProgress.current = false
+        setClosing(false)
+      })
     })
-    return () => {void remove.then(unlisten=>unlisten())}
+    return () => {void remove.then(unlisten=>unlisten()).catch(console.error)}
   },[persistent])
 
   async function archiveAction(action: "backup" | "lock") {
@@ -441,7 +469,7 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
   }
 
   return <>
-    <header className="book-cover" inert={working}>
+    <header className="book-cover" inert={working || closing}>
       <div className="cover-name"><Feather size={19}/><button onClick={() => selectTab("Notebook")}>Fragments</button></div>
       <nav aria-label="Notebook bookmarks" className="bookmarks">
         {bookmarks.map(({page, Icon}) => <button key={page} aria-current={place.page === page ? "page" : undefined} onClick={() => selectTab(page)}><Icon size={16} aria-hidden="true"/>{page}</button>)}
@@ -450,9 +478,9 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
         <label className="calendar-choice"><CalendarDays size={16} aria-hidden="true"/><span className="sr-only">Display calendar</span><select value={calendar} onChange={event => setCalendar(event.target.value)}><option value="gregory">Gregorian</option><option value="persian">Persian</option></select></label>
         <button className="primary-action" id="write-memory" onClick={() => write()} aria-label="Write a memory"><Plus size={17} aria-hidden="true"/><span>Write<span className="wide-action-label"> a memory</span></span></button>
       </div>
-      <div className="journal-status" role="status">{working ? activity : status}</div>
+      <div className="journal-status" role="status">{closing ? "Saving before closing…" : working ? activity : status}</div>
     </header>
-    <main className="book notebook-body" id="notebook-main" tabIndex={-1} inert={working}>
+    <main className="book notebook-body" id="notebook-main" tabIndex={-1} inert={working || closing}>
       {history.length > 0 && <button className="back-mark" onClick={back}><ArrowLeft size={15}/> Back</button>}
       {place.page === "Notebook" && <>
         <TimeJourney years={years} entriesByYear={groups} renderEntry={pageEntry}/>
@@ -523,7 +551,8 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
       </footer>
     </main>
     {working && <div className="media-status" role="status">{activity}</div>}
-    {!working && (saveIssue || issue || notice || undo) && <aside className="save-issue">
+    {closing && <div className="media-status" role="status">Saving before closing…</div>}
+    {!working && !closing && (saveIssue || issue || notice || undo) && <aside className="save-issue">
       {saveIssue && <div className="notification"><span role="alert">{saveIssue}</span><button className="write-line" onClick={()=>{
         setStatus("Saving…")
         void save(currentSnapshot.current).then(()=>{
