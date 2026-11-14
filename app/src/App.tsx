@@ -50,6 +50,7 @@ function Journal() {
   const [error,setError] = useState("")
   const [busy,setBusy] = useState(false)
   const [slow,setSlow] = useState(false)
+  const passwordField = useRef<HTMLInputElement>(null)
 
   function checkArchive() {
     setError("")
@@ -57,6 +58,9 @@ function Journal() {
   }
 
   useEffect(() => { if (isTauri()) checkArchive() }, [])
+  useEffect(() => {
+    if (!busy && !choosingBackup && !sample && !contents) passwordField.current?.focus()
+  }, [exists, backup, busy, choosingBackup, sample, contents])
   useEffect(() => {
     if (!busy) return
     const timer = window.setTimeout(() => setSlow(true), 3000)
@@ -106,11 +110,11 @@ function Journal() {
     <p>{exists === null ? error ? "Could not check for a local notebook." : "Checking for your notebook…" : exists ? "Unlock your notebook." : backup ? "Restore an encrypted backup." : "Begin a private notebook."}</p>
     {exists === null && error && <button className="write-line" onClick={checkArchive}>Try again</button>}
     {exists !== null && <form onSubmit={open}>
-      <label>Password<input type="password" value={password} autoComplete={exists || backup ? "current-password" : "new-password"} onChange={event=>setPassword(event.target.value)} disabled={busy || choosingBackup} required/></label>
+      <label>Password<input ref={passwordField} type="password" value={password} autoComplete={exists || backup ? "current-password" : "new-password"} onChange={event=>setPassword(event.target.value)} disabled={busy || choosingBackup} required/></label>
       {exists === false && !backup && <label>Confirm password<input type="password" value={confirm} autoComplete="new-password" onChange={event=>setConfirm(event.target.value)} disabled={busy || choosingBackup} required/></label>}
-      <button className="write-line" disabled={busy || choosingBackup}>{busy ? "Opening…" : exists ? "Unlock" : backup ? "Restore notebook" : "Create notebook"}</button>
+      <button className="write-line" disabled={busy || choosingBackup}>{busy ? exists ? "Unlocking…" : backup ? "Restoring…" : "Creating…" : exists ? "Unlock" : backup ? "Restore notebook" : "Create notebook"}</button>
     </form>}
-    {busy && <p role="status">{slow ? "Still processing the encrypted notebook. Larger archives can take longer." : exists || backup ? "Checking your password…" : "Setting up encryption…"}</p>}
+    {busy && <p role="status">{slow ? "Still processing the encrypted notebook. Larger archives can take longer." : exists ? "Checking your password…" : backup ? "Checking and restoring your backup…" : "Setting up encryption…"}</p>}
     <div className="cover-options">
     {exists === false && <button className="write-line" disabled={busy || choosingBackup} onClick={()=>void chooseBackup()}>Choose a backup</button>}
     {backup && <div className="backup-selection"><span>{backup.split(/[\\\\/]/).at(-1)}</span><button className="icon-button" aria-label="Clear backup selection" disabled={busy || choosingBackup} onClick={()=>{setBackup(undefined);setError("")}}><X size={16}/></button></div>}
@@ -177,6 +181,13 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
   const busy = useRef(false)
   busy.current = working
   const [activity,setActivity] = useState("")
+  const backupButton = useRef<HTMLButtonElement>(null)
+  const restoreBackupFocus = useRef(false)
+  useLayoutEffect(() => {
+    if (working || !restoreBackupFocus.current) return
+    restoreBackupFocus.current = false
+    backupButton.current?.focus({preventScroll:true})
+  }, [working])
   const queue = useRef<Promise<void>>(Promise.resolve())
   const snapshot = useMemo(() => ({entries,calendar,people,deleted,chapters:customChapters}), [entries,calendar,people,deleted,customChapters])
   const published = useRef(snapshot)
@@ -249,18 +260,22 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
     setWorking(true)
     setIssue("")
     setNotice("")
-    setActivity(action === "backup" ? "Exporting encrypted backup…" : "Locking notebook…")
+    setActivity(action === "backup" ? "Preparing encrypted backup…" : "Locking notebook…")
     try {
       await save(currentSnapshot.current)
       if (action === "lock") {
         await invoke("lock_archive")
         close()
       } else {
+        setActivity("Choose where to save the encrypted backup.")
         const exported = await invoke<boolean>("backup_archive")
         if (exported) setNotice("Encrypted backup exported.")
       }
     } catch (error) {setIssue(String(error))}
-    finally {setWorking(false)}
+    finally {
+      restoreBackupFocus.current = action === "backup"
+      setWorking(false)
+    }
   }
 
   async function attach(id: string, files: File[]) {
@@ -560,7 +575,7 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
         }}>Restore</button></div>)}
       </section>}
       <footer className="book-end"><button id="open-deleted" onClick={()=>turn({page:"Deleted"},undefined,"open-deleted")}>Recently deleted{deleted.length ? ` (${deleted.length})` : ""}</button>
-        {persistent && <><button disabled={working} onClick={()=>void archiveAction("backup")}>Export encrypted backup</button><button disabled={working} onClick={()=>void archiveAction("lock")}>Lock</button></>}
+        {persistent && <><button ref={backupButton} disabled={working} onClick={()=>void archiveAction("backup")}>Export encrypted backup</button><button disabled={working} onClick={()=>void archiveAction("lock")}>Lock</button></>}
         {!persistent && isTauri() && <button onClick={close}>Return to notebook cover</button>}
       </footer>
     </main>
