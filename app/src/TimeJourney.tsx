@@ -24,6 +24,7 @@ export function TimeJourney({years, entriesByYear, renderEntry}: {
   }
 
   useEffect(() => {
+    const scroller = journal.current?.closest(".app-scroll")
     const leaves = Array.from(journal.current?.querySelectorAll<HTMLElement>("[data-year]") ?? [])
     if (!leaves.length) return
     let frame = 0
@@ -49,12 +50,12 @@ export function TimeJourney({years, entriesByYear, renderEntry}: {
       })
     }
     follow()
-    window.addEventListener("scroll",follow,{passive:true})
+    scroller?.addEventListener("scroll",follow,{passive:true})
     window.addEventListener("resize",follow)
     window.addEventListener("focusin",follow)
     return () => {
       cancelAnimationFrame(frame)
-      window.removeEventListener("scroll",follow)
+      scroller?.removeEventListener("scroll",follow)
       window.removeEventListener("resize",follow)
       window.removeEventListener("focusin",follow)
     }

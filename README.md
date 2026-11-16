@@ -1,6 +1,8 @@
 Fragments — project planning package
 Planning baseline complete · 14 November 2026
 
+Download the Windows x64 installer from [GitHub Releases](https://github.com/AMIRSRAD/Fragments/releases/latest). See the [desktop guide](app/README.md) for using Fragments and building it from source.
+
 **Fragments is a lifelong local journal.** It combines memories, writing, photographs, video, people, dates, chapters, and reflection in a warm physical-journal interface with a dreamlike sense of moving through time.
 
 The first interactive sample journal is available in [app](app/README.md). It demonstrates the reading, people, timeline, and editing experience with fictional content. Sample changes last for the current session. The planning documents below describe the full release.

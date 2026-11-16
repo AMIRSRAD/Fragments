@@ -251,7 +251,7 @@ pub(crate) fn playback(
 }
 
 #[tauri::command]
-pub async fn read_album_media(app: AppHandle, id: String, mime: String) -> Result<tauri::ipc::Response, String> {
+pub async fn read_album_media(app: AppHandle, id: String, mime: String, max_bytes: u64) -> Result<tauri::ipc::Response, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let item = Media { id, mime, caption: String::new() };
         if !valid_item(&item) {
@@ -262,7 +262,7 @@ pub async fn read_album_media(app: AppHandle, id: String, mime: String) -> Resul
         let session = guard.as_ref().ok_or("Unlock the notebook before exporting.")?;
         let mut stream = reader(&session.directory.join("media").join(format!("{}.age", item.id)), &session.identity)?;
         let length = stream.seek(SeekFrom::End(0)).map_err(message)?;
-        if length > 128 * 1024 * 1024 {
+        if length > max_bytes.min(48 * 1024 * 1024) {
             return Err("Attachment exceeds the HTML album size limit.".into());
         }
         stream.seek(SeekFrom::Start(0)).map_err(message)?;

@@ -6,13 +6,15 @@ import { participant } from "./MemoryNotes"
 
 const escape = (value: string) => value.replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[char]!)
 
-async function embeddedMedia(entry: Entry, item: ReturnType<typeof attachments>[number], persistent: boolean) {
+async function embeddedMedia(entry: Entry, item: ReturnType<typeof attachments>[number], persistent: boolean, remaining: number) {
+  const maxBytes = Math.max(0, Math.floor((remaining - 128) / 4) * 3)
   const blob = persistent && !["legacy-cover","sample-cover"].includes(item.id)
-    ? new Blob([await invoke<ArrayBuffer>("read_album_media",{id:item.id,mime:item.mime})],{type:item.mime})
+    ? new Blob([await invoke<ArrayBuffer>("read_album_media",{id:item.id,mime:item.mime,maxBytes})],{type:item.mime})
     : await fetch(mediaUrl(entry,item)).then(response => {
       if (!response.ok) throw Error("Attachment could not be read.")
       return response.blob()
     })
+  if (blob.size > maxBytes) throw Error("Attachment exceeds the album size limit.")
   return await new Promise<string>((resolve,reject)=>{
     const reader = new FileReader()
     reader.onload = () => resolve(String(reader.result))
@@ -22,6 +24,8 @@ async function embeddedMedia(entry: Entry, item: ReturnType<typeof attachments>[
 }
 
 export async function exportAlbum(entries: Entry[], title: string, format: (date: string, timing?: Timing) => string, people: People, persistent: boolean) {
+  const maxAlbumSize = 64 * 1024 * 1024
+  let embeddedSize = 0
   const sections: string[] = []
   let missing = 0
   for (const entry of entries) {
@@ -29,7 +33,9 @@ export async function exportAlbum(entries: Entry[], title: string, format: (date
     for (const item of attachments(entry)) {
       try {
         if (!/^(image\/(jpeg|png|webp|gif)|video\/(mp4|webm|quicktime))$/.test(item.mime)) throw Error("Unsupported attachment.")
-        const url = escape(await embeddedMedia(entry,item,persistent))
+        const embedded = await embeddedMedia(entry,item,persistent,maxAlbumSize - embeddedSize)
+        embeddedSize += embedded.length
+        const url = escape(embedded)
         media.push(`<figure>${item.mime.startsWith("video/") ? `<video controls preload="none" src="${url}"></video>` : `<img loading="lazy" alt="${escape(item.caption)}" src="${url}">`}<figcaption dir="auto">${escape(item.caption)}</figcaption></figure>`)
       } catch {
         missing++

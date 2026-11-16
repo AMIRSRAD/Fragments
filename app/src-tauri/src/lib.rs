@@ -1,6 +1,28 @@
 mod archive;
 mod media;
 
+#[tauri::command]
+fn open_about_link(destination: &str) -> Result<(), String> {
+    let url = match destination {
+        "website" => "https://amirsrad.ir",
+        "github" => "https://github.com/AMIRSRAD/Fragments",
+        "release" => "https://github.com/AMIRSRAD/Fragments/releases/latest",
+        _ => return Err("Unknown destination".into()),
+    };
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("rundll32.exe")
+            .args(["url.dll,FileProtocolHandler", url])
+            .creation_flags(0x08000000)
+            .spawn()
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
+    #[cfg(not(target_os = "windows"))]
+    Err(format!("Open {url} in your browser."))
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(archive::Archive::default())
@@ -11,6 +33,7 @@ pub fn run() {
             },
         )
         .invoke_handler(tauri::generate_handler![
+            open_about_link,
             archive::archive_exists,
             archive::open_archive,
             archive::save_archive,

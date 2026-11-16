@@ -1,8 +1,8 @@
 import { getCurrentWindow } from "@tauri-apps/api/window"
-import { Copy, Feather, Minus, Square, X } from "lucide-react"
+import { Copy, Feather, Info, LogOut, Minus, Square, X } from "lucide-react"
 import { useEffect, useState } from "react"
 
-export function TitleBar() {
+export function TitleBar({openAbout,status,signOut,busy}: {openAbout:()=>void; status?:string; signOut?:()=>void; busy?:boolean}) {
   const window = getCurrentWindow()
   const [maximized, setMaximized] = useState(false)
   const [error, setError] = useState("")
@@ -39,8 +39,11 @@ export function TitleBar() {
     <div className="title-bar-drag" data-tauri-drag-region>
       <Feather size={15} aria-hidden="true"/>
       <span>Fragments</span>
+      {status && <span className="title-bar-status" role="status">{status}</span>}
     </div>
     <div className="window-controls" role="group" aria-label="Window controls">
+      <button type="button" title="About Fragments" aria-label="About Fragments" disabled={busy} onClick={openAbout}><Info size={15}/></button>
+      {signOut && <button type="button" title="Sign out to notebook cover" aria-label="Sign out to notebook cover" disabled={busy} onClick={signOut}><LogOut size={16}/></button>}
       <button type="button" title="Minimize window" aria-label="Minimize window" onClick={() => void control("minimize", "Minimize window")}><Minus size={16} aria-hidden="true"/></button>
       <button type="button" title={resizeLabel} aria-label={resizeLabel} onClick={() => void control("toggleMaximize", resizeLabel)}>
         {maximized ? <Copy size={13} aria-hidden="true"/> : <Square size={13} aria-hidden="true"/>}

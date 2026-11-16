@@ -10,7 +10,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Mutex,
 };
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 const MAX_FILE: u64 = 48 * 1024 * 1024;
 const MAX_NOTEBOOK: usize = 30 * 1024 * 1024;
@@ -285,7 +285,9 @@ pub async fn backup_archive(app: AppHandle) -> Result<bool, String> {
         let session = state
             .as_ref()
             .ok_or("Unlock the notebook before making a backup.")?;
-        let result = write_bundle(session, &destination);
+        let result = write_bundle(session, &destination, |bytes| {
+            let _ = app.emit("backup-bytes-written", bytes);
+        });
         result.map(|()| true)
     })
     .await
@@ -314,44 +316,66 @@ pub async fn save_readable_album(html: String) -> Result<bool, String> {
     }).await.map_err(message)?
 }
 
-fn write_bundle(session: &Session, destination: &Path) -> Result<(), String> {
+struct BackupWriter<W, F> {
+    writer: W,
+    progress: F,
+    written: u64,
+    last_report: std::time::Instant,
+}
+
+impl<W: Write, F: FnMut(u64)> Write for BackupWriter<W, F> {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        let count = self.writer.write(bytes)?;
+        self.written += count as u64;
+        if self.last_report.elapsed().as_millis() >= 500 {
+            (self.progress)(self.written);
+            self.last_report = std::time::Instant::now();
+        }
+        Ok(count)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.writer.flush()
+    }
+}
+
+fn write_bundle(session: &Session, destination: &Path, mut progress: impl FnMut(u64)) -> Result<(), String> {
+    if destination.try_exists().map_err(message)? {
+        return Err("Choose a new backup filename.".into());
+    }
     let snapshot = path(&session.directory, session.generation);
     let envelope: Snapshot = serde_json::from_str(&read_snapshot(&snapshot)?).map_err(message)?;
     let encrypted = STANDARD.decode(envelope.notebook).map_err(message)?;
     let contents = String::from_utf8(age::decrypt(&session.identity, &encrypted).map_err(message)?)
         .map_err(message)?;
     let items = super::media::objects(&contents)?;
-    let output = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(destination)
-        .map_err(|error| format!("Choose a new backup filename. {error}"))?;
-    let result = (|| {
-        let mut bundle = tar::Builder::new(output);
-        bundle
-            .append_path_with_name(snapshot, "notebook.json")
-            .map_err(message)?;
-        let mut seen = std::collections::HashSet::new();
-        for item in items {
-            if !seen.insert(item.id.clone()) {
-                continue;
-            }
+    let parent = destination.parent().filter(|path| !path.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    let mut output = tempfile::Builder::new()
+        .prefix(".fragments-backup-")
+        .suffix(".partial")
+        .tempfile_in(parent)
+        .map_err(message)?;
+    progress(0);
+    let mut bundle = tar::Builder::new(BackupWriter {
+        writer: output.as_file_mut(),
+        progress,
+        written: 0,
+        last_report: std::time::Instant::now(),
+    });
+    bundle.append_path_with_name(snapshot, "notebook.json").map_err(message)?;
+    let mut seen = std::collections::HashSet::new();
+    for item in items {
+        if seen.insert(item.id.clone()) {
             let name = format!("media/{}.age", item.id);
-            bundle
-                .append_path_with_name(session.directory.join(&name), &name)
-                .map_err(message)?;
+            bundle.append_path_with_name(session.directory.join(&name), &name)
+                .map_err(|error| format!("Could not back up {name}. {error}"))?;
         }
-        bundle
-            .into_inner()
-            .map_err(message)?
-            .sync_all()
-            .map_err(message)?;
-        Ok(())
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(destination);
     }
-    result
+    let mut finished = bundle.into_inner().map_err(message)?;
+    (finished.progress)(finished.written);
+    finished.writer.sync_all().map_err(message)?;
+    output.persist_noclobber(destination).map_err(message)?;
+    Ok(())
 }
 
 fn restore_bundle(
@@ -382,8 +406,11 @@ fn restore_bundle(
         .map(|item| format!("media/{}.age", item.id))
         .collect();
     fs::create_dir_all(directory.join("media")).map_err(message)?;
+    let staging = tempfile::Builder::new().prefix(".restore-").tempdir_in(directory).map_err(message)?;
+    fs::create_dir(staging.path().join("media")).map_err(message)?;
     let mut created = Vec::new();
     let result = (|| {
+        let mut verified = Vec::new();
         for entry in entries {
             let mut entry = entry.map_err(message)?;
             let path = entry
@@ -394,20 +421,30 @@ fn restore_bundle(
             if !entry.header().entry_type().is_file() || !required.remove(&path) {
                 return Err("The backup contains an unexpected attachment.".into());
             }
-            let target = directory.join(path);
+            let target = staging.path().join(&path);
             let mut output = OpenOptions::new()
                 .create_new(true)
                 .write(true)
                 .open(&target)
                 .map_err(message)?;
-            created.push(target.clone());
             io::copy(&mut entry, &mut output).map_err(message)?;
             output.sync_all().map_err(message)?;
             drop(output);
             super::media::verify_object(&target, &decoded.0)?;
+            verified.push(path);
         }
         if !required.is_empty() {
             return Err("The backup is missing media files.".into());
+        }
+        for path in &verified {
+            if directory.join(path).try_exists().map_err(message)? {
+                return Err("An attachment already exists in the restore folder.".into());
+            }
+        }
+        for path in verified {
+            let target = directory.join(&path);
+            fs::rename(staging.path().join(path), &target).map_err(message)?;
+            created.push(target);
         }
         Ok(decoded)
     })();
@@ -516,8 +553,20 @@ mod tests {
         }]}).to_string();
         commit(&mut session, &contents).unwrap();
         let backup = root.join("test.fragments");
-        write_bundle(&session, &backup).unwrap();
-        assert!(write_bundle(&session, &backup).is_err());
+        let mut reported = 0;
+        write_bundle(&session, &backup, |bytes| reported = bytes).unwrap();
+        assert_eq!(reported, fs::metadata(&backup).unwrap().len());
+        assert!(write_bundle(&session, &backup, |_| {}).is_err());
+        let media_path = session.directory.join("media").join(format!("{}.age", ids[0]));
+        let parked = media_path.with_extension("parked");
+        fs::rename(&media_path, &parked).unwrap();
+        let incomplete = root.join("incomplete.fragments");
+        assert!(write_bundle(&session, &incomplete, |_| {}).is_err());
+        assert!(!incomplete.exists());
+        assert!(!fs::read_dir(&root).unwrap().any(|entry|
+            entry.unwrap().path().extension().is_some_and(|ext| ext == "partial")
+        ));
+        fs::rename(&parked, &media_path).unwrap();
         let (identity, wrapped_identity, reopened) =
             restore_bundle(&backup, &restored, password).unwrap();
         assert_eq!(reopened, contents);

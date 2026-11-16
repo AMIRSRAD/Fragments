@@ -14,6 +14,7 @@ export function AlbumForm({entries, chapters, activeChapter, format, submit, clo
   return <section className="index-leaf">
     <h1>Export HTML album</h1>
     <p>This readable album is unencrypted. Anyone with the file can open the memories and attachments you include.</p>
+    <p>Embedded attachments are limited to 64 MiB after encoding. Use an encrypted backup to include the entire notebook and all its media.</p>
     <div className="margin-form"><label>Chapter<select value={chapter} onChange={event=>{setChapter(event.target.value);setSelected([])}}>
       <option value="">All chapters</option>{chapters.map(name=><option key={name}>{name}</option>)}
     </select></label></div>

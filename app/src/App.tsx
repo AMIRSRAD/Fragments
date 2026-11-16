@@ -1,10 +1,12 @@
 import { invoke, isTauri } from "@tauri-apps/api/core"
 import { getCurrentWindow } from "@tauri-apps/api/window"
+import { listen } from "@tauri-apps/api/event"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from "react"
 import { ArrowLeft, ArrowRight, BookOpen, Bookmark, CalendarDays, ChevronLeft, ChevronRight, Feather, Plus, Search, Users, X } from "lucide-react"
 import { chapters, mentions, sampleMemories, searchKey, storyPeople, storyText, type PersonId, type People } from "./memories"
 import { NotebookEntry, attachments, type Entry, type Media, type Photograph } from "./NotebookEntry"
 import { TimeJourney } from "./TimeJourney"
+import { About } from "./About"
 import { TitleBar } from "./TitleBar"
 import "@fontsource/instrument-serif"
 import "@fontsource/instrument-serif/400-italic.css"
@@ -37,14 +39,17 @@ function dismissOnBackdrop(event: MouseEvent<HTMLDialogElement>) {
   if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close()
 }
 
-export default function App() {
+export default function App() { return <Journal/> }
+
+function Journal() {
+  const [aboutOpen,setAboutOpen] = useState(false)
   return <>
-    {isTauri() && <TitleBar/>}
-    <Journal/>
+    <ArchiveCover openAbout={()=>setAboutOpen(true)}/>
+    <About open={aboutOpen} close={()=>setAboutOpen(false)}/>
   </>
 }
 
-function Journal() {
+function ArchiveCover({openAbout}: {openAbout:()=>void}) {
   const [contents, setContents] = useState<Contents | null>(null)
   const [sample, setSample] = useState(!isTauri())
   const [exists,setExists] = useState<boolean | null>(null)
@@ -107,10 +112,10 @@ function Journal() {
     }
   }
 
-  if (sample || contents) return <Notebook initial={contents ?? {entries:sampleMemories,calendar:"gregory"}} persistent={!!contents}
+  if (sample || contents) return <Notebook initial={contents ?? {entries:sampleMemories,calendar:"gregory"}} persistent={!!contents} openAbout={openAbout}
     close={() => {setContents(null);setSample(false)}}/>
 
-  return <div className="archive-landing"><main className="archive-cover book">
+  return <>{isTauri() && <TitleBar openAbout={openAbout}/>}<div className="app-scroll"><div className="archive-landing"><main className="archive-cover book">
     <div className="cover-title"><Feather size={24} aria-hidden="true"/><h1>Fragments</h1></div>
     <p>{exists === null ? error ? "Could not check for a local notebook." : "Checking for your notebook…" : exists ? "Unlock your notebook." : backup ? "Restore an encrypted backup." : "Begin a private notebook."}</p>
     {exists === null && error && <button className="write-line" onClick={checkArchive}>Try again</button>}
@@ -126,10 +131,10 @@ function Journal() {
     {error && <p role="alert">{error}</p>}
     <button className="write-line" disabled={busy || choosingBackup} onClick={()=>setSample(true)}>Open the sample notebook</button>
     </div>
-  </main></div>
+  </main></div></div></>
 }
 
-function Notebook({initial,persistent,close}: {initial:Contents; persistent:boolean; close:()=>void}) {
+function Notebook({initial,persistent,close,openAbout}: {initial:Contents; persistent:boolean; close:()=>void; openAbout:()=>void}) {
   const [people,setPeople] = useState<People>(initial.people ?? (persistent ? {} : storyPeople))
   const [deleted,setDeleted] = useState<Entry[]>(initial.deleted ?? [])
   const [customChapters,setCustomChapters] = useState<string[]>(initial.chapters ?? [])
@@ -144,6 +149,7 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
       Object.keys(people).find(id => people[id].name === value) ?? value),
   })))
   const [place, setPlace] = useState<Place>({page:"Notebook"})
+  const scrollArea = useRef<HTMLDivElement>(null)
   const [history, setHistory] = useState<ReturnPoint[]>([])
   const returnPoint = useRef<ReturnPoint | null>(null)
   const [calendar, setCalendar] = useState(initial.calendar)
@@ -154,15 +160,40 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
     const cover = bookCover.current
     if (!cover) return
     const root = document.documentElement
-    const measure = () => root.style.setProperty("--measured-header-height", `${cover.getBoundingClientRect().height}px`)
+    const pane = scrollArea.current
+    const tab = cover.querySelector<HTMLElement>(".bookmarks [aria-current]")
+    const panel = pane?.querySelector<HTMLElement>(".notebook-body")
+    const motion = matchMedia("(prefers-reduced-motion: reduce)")
+    const blend = () => {
+      const top = pane?.scrollTop ?? 0
+      root.style.setProperty("--connector-blend", String(motion.matches ? Number(top <= 1) : Math.max(0,1-top/56)))
+    }
+    // Measure the selected button after layout so the paper join follows responsive tabs.
+    const measure = () => {
+      root.style.setProperty("--measured-header-height", `${cover.getBoundingClientRect().height}px`)
+      if (!tab || !panel) return
+      const button = tab.getBoundingClientRect()
+      const book = panel.getBoundingClientRect()
+      root.style.setProperty("--tab-join-x", `${button.left + button.width/2 - book.left}px`)
+      // The SVG stroke follows the center of each one-pixel button border.
+      root.style.setProperty("--tab-join-width", `${button.width - 1}px`)
+      root.style.setProperty("--tab-join-neck", `${cover.getBoundingClientRect().bottom-button.bottom+1}px`)
+    }
+    pane?.addEventListener("scroll",blend,{passive:true})
+    motion.addEventListener("change",blend)
+    blend()
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(cover, {box:"border-box"})
+    if (tab) observer.observe(tab)
+    if (panel) observer.observe(panel)
     return () => {
       observer.disconnect()
-      root.style.removeProperty("--measured-header-height")
+      pane?.removeEventListener("scroll",blend)
+      motion.removeEventListener("change",blend)
+      for (const name of ["--measured-header-height","--connector-blend","--tab-join-x","--tab-join-width","--tab-join-neck"]) root.style.removeProperty(name)
     }
-  }, [])
+  }, [place.page])
   const [pending, setPending] = useState<{id:string; focus?: "title" | "date" | "media"} | null>(null)
   const [person, setPerson] = useState<PersonId | null>(null)
   const [viewer, setViewer] = useState<{photos: Photograph[]; index: number; trigger: HTMLButtonElement} | null>(null)
@@ -278,7 +309,12 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
         close()
       } else {
         setActivity("Choose where to save the encrypted backup.")
-        const exported = await invoke<boolean>("backup_archive")
+        const unlisten = await listen<number>("backup-bytes-written", ({payload}) => {
+          const size = payload >= 1024 ** 3 ? `${(payload / 1024 ** 3).toFixed(2)} GiB` :
+            `${(payload / 1024 ** 2).toFixed(1)} MiB`
+          setActivity(`Writing encrypted backup · ${size}`)
+        })
+        const exported = await invoke<boolean>("backup_archive").finally(unlisten)
         if (exported) setNotice("Encrypted backup exported.")
       }
     } catch (error) {setIssue(String(error))}
@@ -402,7 +438,7 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
       const origin = point.focusId ? document.getElementById(point.focusId) : null
       const focus = origin ?? document.getElementById("notebook-main")
       focus?.focus({preventScroll:true})
-      window.scrollTo(0, point.top)
+      scrollArea.current?.scrollTo(0, point.top)
       return
     }
     if (!pending) return
@@ -419,7 +455,7 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
     setHistory([])
     setPlace({page})
     setPending(null)
-    window.scrollTo(0,0)
+    scrollArea.current?.scrollTo(0,0)
   }
 
   function turn(next: Place, entry?: string, focusId?: string) {
@@ -427,11 +463,11 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
       if (entry) setPending({id:entry})
       return
     }
-    const point = {place, top:window.scrollY, focusId:focusId ?? document.activeElement?.id}
+    const point = {place, top:scrollArea.current?.scrollTop ?? 0, focusId:focusId ?? document.activeElement?.id}
     setHistory(previous => [...previous, point])
     setPlace(next)
     setPending(entry ? {id:entry} : null)
-    if (!entry) window.scrollTo(0,0)
+    if (!entry) scrollArea.current?.scrollTo(0,0)
   }
 
   function back() {
@@ -548,6 +584,7 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
   }
 
   return <>
+    {isTauri() && <TitleBar openAbout={openAbout} status={closing ? "Saving before closing…" : working ? activity : status} signOut={()=>persistent ? void archiveAction("lock") : close()} busy={working || closing}/>}
     <header ref={bookCover} className="book-cover" inert={working || closing}>
       <div className="cover-name"><Feather size={19}/><button onClick={() => selectTab("Notebook")}>Fragments</button></div>
       <nav aria-label="Notebook bookmarks" className="bookmarks">
@@ -557,9 +594,13 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
         <label className="calendar-choice"><CalendarDays size={16} aria-hidden="true"/><span className="sr-only">Display calendar</span><select value={calendar} onChange={event => {setCalendar(event.target.value);setFilters(previous=>({...previous,year:""}))}}><option value="gregory">Gregorian</option><option value="persian">Persian</option></select></label>
         <button className="primary-action" id="write-memory" onClick={() => write()} aria-label="Write a memory"><Plus size={17} aria-hidden="true"/><span>Write<span className="wide-action-label"> a memory</span></span></button>
       </div>
-      <div className="journal-status" role="status">{closing ? "Saving before closing…" : working ? activity : status}</div>
     </header>
-    <main className="book notebook-body" id="notebook-main" tabIndex={-1} inert={working || closing}>
+    <div className="app-scroll" ref={scrollArea}>
+    <main className="book notebook-body" data-page={place.page} id="notebook-main" tabIndex={-1} inert={working || closing}>
+      {bookmarks.some(({page})=>page===place.page) && <svg className="tab-join" viewBox="0 0 144 28" preserveAspectRatio="none" aria-hidden="true">
+        <path d="M28 0H116C116 15 128 27 144 27V28H0V27C16 27 28 15 28 0Z" fill="var(--join-paper)"/>
+        <path d="M-2 27H0C16 27 28 15 28 0M116 0C116 15 128 27 144 27H146" fill="none" stroke="var(--book-edge)" vectorEffect="non-scaling-stroke"/>
+      </svg>}
       {history.length > 0 && <button className="back-mark" onClick={back}><ArrowLeft size={15}/> Back</button>}
       {place.page === "Notebook" && <>
         <TimeJourney years={years} entriesByYear={groups} renderEntry={pageEntry}/>
@@ -656,10 +697,11 @@ function Notebook({initial,persistent,close}: {initial:Contents; persistent:bool
         }}>Restore</button></div>)}
       </section>}
       <footer className="book-end"><button id="export-album" onClick={()=>turn({page:"Album",key:place.page === "Chapters" ? place.key : undefined},undefined,"export-album")}>Export HTML album</button><button id="open-deleted" onClick={()=>turn({page:"Deleted"},undefined,"open-deleted")}>Recently deleted{deleted.length ? ` (${deleted.length})` : ""}</button>
-        {persistent && <><button ref={backupButton} disabled={working} onClick={()=>void archiveAction("backup")}>Export encrypted backup</button><button disabled={working} onClick={()=>void archiveAction("lock")}>Lock</button></>}
-        {!persistent && isTauri() && <button onClick={close}>Return to notebook cover</button>}
+        {persistent && <><button ref={backupButton} disabled={working} onClick={()=>void archiveAction("backup")}>Export encrypted backup</button></>}
+        {!isTauri() && <button onClick={openAbout}>About</button>}
       </footer>
     </main>
+    </div>
     {working && <div className="media-status" role="status">{activity}</div>}
     {closing && <div className="media-status" role="status">Saving before closing…</div>}
     {!working && !closing && (saveIssue || issue || notice || undo) && <aside className="save-issue">
