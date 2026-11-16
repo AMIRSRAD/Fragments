@@ -1,32 +1,70 @@
-Fragments — project planning package
-Planning baseline complete · 14 November 2026
+# Fragments
 
-Download the Windows x64 installer from [GitHub Releases](https://github.com/AMIRSRAD/Fragments/releases/latest). See the [desktop guide](app/README.md) for using Fragments and building it from source.
+## 1. What is Fragments?
 
-**Fragments is a lifelong local journal.** It combines memories, writing, photographs, video, people, dates, chapters, and reflection in a warm physical-journal interface with a dreamlike sense of moving through time.
+Fragments is a private journal for Windows. Use it to keep the stories, photos, videos, and people you want to remember in one place. The notebook is organized by year, and you can group related memories into chapters such as a trip, a school year, or time spent in a particular place.
 
-The first interactive sample journal is available in [app](app/README.md). It demonstrates the reading, people, timeline, and editing experience with fictional content. Sample changes last for the current session. The planning documents below describe the full release.
+**[Download the Windows x64 installer](https://github.com/AMIRSRAD/Fragments/releases/latest)**. Open Fragments from the Start menu. Choose **Open the sample notebook** to explore with fictional entries, or create a private notebook with a password of at least 12 characters. Changes to the sample notebook last for the session.
 
-**Confirmed first-release requirements.** Windows first; English interface; Persian and English writing; Gregorian and Persian date input/display; encryption from the first release; original media preservation; exportable/importable data and portable settings; permanent organized histories for people.
+### What you can do
 
-**Read the plan in this order.**
+- **Write a memory.** Add a story, photos, or videos. Edit entries in place or add a dated reflection to record how you see an older memory now.
+- **Use the dates you know.** Choose the Gregorian or Persian calendar. Enter an exact day, a month and year, an approximate year or season, or a date range. You can also leave a memory undated.
+- **Keep a history with each person.** Write undated notes on a profile or group shared memories into phases you name. A memory written from a profile also appears in the Notebook. You can record who was there and who a story is about.
+- **Find an older entry.** Search the writing and captions, or filter by person, chapter, year, and whether a memory has photos.
+- **Back up or share selected memories.** A private notebook saves encrypted data on your device. Export an encrypted backup to keep a separate copy. An HTML album is a readable, unencrypted file that can be opened without Fragments.
 
-| Document | Purpose |
+### Screenshots
+
+These screenshots use the fictional sample notebook.
+
+![Notebook view with year bookmarks, a memory, and a photograph of the Caspian coast](docs/screenshots/notebook.png)
+
+*Notebook · Browse by year and read or edit memories in place.*
+
+![Sara’s People profile with relationship fields and a space for undated writing](docs/screenshots/people.png)
+
+*People · Keep profile notes alongside a shared memory timeline.*
+
+![Persian calendar open in the memory date picker](docs/screenshots/persian-calendar.png)
+
+*Memory date · Choose a day in the Persian calendar or use a less precise date.*
+
+## 2. Technical details
+
+| Area | Implementation |
 | --- | --- |
-| [Product plan](PRODUCT_PLAN.md) | Purpose, emotional experience, and long-term product vision |
-| [Decisions](DECISIONS.md) | Confirmed requirements and selected implementation defaults |
-| [UI design](UI_DESIGN.md) | Screen layouts, interaction behavior, visual direction, and interface states |
-| [User journeys](USER_JOURNEYS.md) | Complete stories covering capture, people, reflection, privacy, and recovery |
-| [Archive format](ARCHIVE_FORMAT.md) | Authoritative records, dates, relationships, originals, and portability |
-| [Privacy and recovery](PRIVACY_AND_RECOVERY.md) | Encryption, passwords, recovery kits, locking, and independent access |
-| [Technical architecture](TECHNICAL_ARCHITECTURE.md) | Stack, component responsibilities, media handling, and early proofs |
-| [Implementation plan](IMPLEMENTATION_PLAN.md) | First-release scope, ordered milestones, acceptance gates, and risks |
-| [Next steps](NEXT_STEPS.md) | Short planning-completion record and implementation handoff |
+| Interface | React and TypeScript, bundled with Vite. The desktop shell uses Tauri 2 and Windows WebView2. |
+| Notebook storage | The Rust backend uses age-encrypted JSON snapshots. The notebook password protects the archive key, and the backend retains the previous committed snapshot for recovery. |
+| Media | Originals are stored as separate encrypted files. Imports, encrypted backups, and restores stream attachment bytes. Video playback uses byte-range reads, with format support provided by WebView2. |
+| Backup and export | A `.fragments` backup is a tar bundle containing an encrypted snapshot and its referenced media. HTML albums are unencrypted and limit embedded attachments to 64 MiB after encoding. |
+| Updates | About checks GitHub Releases. When an update is available, the user can open the release and install it manually. |
 
-**How the documents fit together.** DECISIONS.md resolves earlier alternatives. ARCHIVE_FORMAT.md defines preservation semantics; PRIVACY_AND_RECOVERY.md defines how they are protected. UI_DESIGN.md describes the experience, and IMPLEMENTATION_PLAN.md defines what must be demonstrated before release. The product vision includes future possibilities; the implementation plan sets the first-release boundary.
+The frontend lives in [app/src](app/src), the native backend in [app/src-tauri/src](app/src-tauri/src), and desktop packaging settings in [tauri.conf.json](app/src-tauri/tauri.conf.json). Full backup and restore at 400 GB has not been verified.
 
-**Preservation and privacy together.** The live journal is encrypted. Its decrypted content uses ordinary documented records, writing, and media. Complete backups are encrypted by default. A readable HTML edition is a deliberate unencrypted export. Recovery instructions and independent tooling must make access possible without a running Fragments installation.
+For more detail, see the [desktop guide](app/README.md), [technical architecture](TECHNICAL_ARCHITECTURE.md), [archive format](ARCHIVE_FORMAT.md), and [privacy and recovery plan](PRIVACY_AND_RECOVERY.md). The [product plan](PRODUCT_PLAN.md), [decisions](DECISIONS.md), [UI design](UI_DESIGN.md), [user journeys](USER_JOURNEYS.md), [implementation plan](IMPLEMENTATION_PLAN.md), and [next steps](NEXT_STEPS.md) also describe planned work.
 
-**Chosen technical direction.** Tauri 2 and Rust with React, TypeScript, and Vite. SQLite is a replaceable local index. The age file format is the selected encryption baseline, with password and recovery wrappers plus signed archive commits. These are planning choices requiring the validation described in the implementation plan.
+## 3. Build from source
 
-The preview establishes the initial visual direction. Remaining foundation work includes durable encrypted archive storage, independent restoration, encrypted media playback, and Persian date entry.
+On Windows, install Git, Node.js, Rust with the MSVC toolchain, Microsoft C++ Build Tools with the **Desktop development with C++** workload, and the WebView2 runtime. The build was verified with Node.js 22.19.0 and Rust 1.95.0. See the [Tauri Windows setup guide](https://v2.tauri.app/start/prerequisites/#windows).
+
+Open PowerShell and run:
+
+```powershell
+git clone https://github.com/AMIRSRAD/Fragments.git
+cd Fragments/app
+npm ci
+npm run build:installer
+```
+
+The installer is generated under `app/src-tauri/target/release/bundle/nsis/` from the repository root.
+
+| Command from `app/` | Purpose |
+| --- | --- |
+| `npm run tauri -- dev` | Run the Windows desktop app while developing. |
+| `npm run dev` | Open the sample notebook in a browser using the address printed by Vite. |
+| `npm run build:desktop` | Build a standalone debug executable at `src-tauri/target/debug/Fragments.exe`. |
+| `npm run build` | Type-check and build the frontend. |
+| `cargo test --manifest-path src-tauri/Cargo.toml --lib` | Run the Rust archive and media tests. |
+
+Close the browser development server before starting Tauri development. Both use port 1420.
