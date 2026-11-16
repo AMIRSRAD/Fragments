@@ -13,6 +13,7 @@ Fragments is a private journal for Windows. Use it to keep the stories, photos, 
 - **Keep a history with each person.** Write undated notes on a profile or group shared memories into phases you name. A memory written from a profile also appears in the Notebook. You can record who was there and who a story is about.
 - **Find an older entry.** Search the writing and captions, or filter by person, chapter, year, and whether a memory has photos.
 - **Back up or share selected memories.** A private notebook saves encrypted data on your device. Export an encrypted backup to keep a separate copy. An HTML album is a readable, unencrypted file that can be opened without Fragments.
+- **Share an original photo or video.** Use the download icon on an attachment in a private notebook to save an unencrypted copy. This also works for large videos that exceed the HTML album’s size limit. Video preview depends on the codecs available in Windows WebView2.
 
 ### Screenshots
 

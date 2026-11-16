@@ -45,6 +45,21 @@ fn file_type(path: &Path) -> Option<&'static str> {
     }
 }
 
+fn matches_header(mime: &str, bytes: &[u8]) -> bool {
+    match mime {
+        "image/jpeg" => bytes.starts_with(b"\xff\xd8\xff"),
+        "image/png" => bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
+        "image/gif" => bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a"),
+        "image/webp" => bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP"),
+        "video/webm" => bytes.starts_with(b"\x1a\x45\xdf\xa3"),
+        "video/mp4" | "video/quicktime" => matches!(
+            bytes.get(4..8),
+            Some(b"ftyp" | b"moov" | b"mdat" | b"wide" | b"free" | b"skip" | b"uuid" | b"styp")
+        ),
+        _ => false,
+    }
+}
+
 pub(crate) fn objects(contents: &str) -> Result<Vec<Media>, String> {
     let document: serde_json::Value = serde_json::from_str(contents).map_err(message)?;
     objects_in(&document)
@@ -110,6 +125,17 @@ pub async fn import_media(app: AppHandle) -> Result<Vec<Media>, String> {
                 let staged = directory.join(format!("{id}.tmp"));
                 let final_path = directory.join(format!("{id}.age"));
                 let mut input = File::open(&source).map_err(message)?;
+                let metadata = input.metadata().map_err(message)?;
+                let mut header = [0; 12];
+                let header = &mut header[..metadata.len().min(12) as usize];
+                if !metadata.is_file() {
+                    return Err("Choose a regular photo or video file.".into());
+                }
+                input.read_exact(header).map_err(message)?;
+                if !matches_header(mime, header) {
+                    return Err(format!("{} does not appear to be a valid {mime} file.", source.display()));
+                }
+                input.rewind().map_err(message)?;
                 let encryptor = age::Encryptor::with_recipients(std::iter::once(
                     &recipient as &dyn age::Recipient,
                 ))
@@ -117,7 +143,10 @@ pub async fn import_media(app: AppHandle) -> Result<Vec<Media>, String> {
                 let file = File::create(&staged).map_err(message)?;
                 committed.push(staged.clone());
                 let mut writer = encryptor.wrap_output(file).map_err(message)?;
-                io::copy(&mut input, &mut writer).map_err(message)?;
+                let copied = io::copy(&mut input, &mut writer).map_err(message)?;
+                if copied != metadata.len() || input.metadata().map_err(message)?.modified().ok() != metadata.modified().ok() {
+                    return Err(format!("{} changed during import. Select it again once it is ready.", source.display()));
+                }
                 writer
                     .finish()
                     .map_err(message)?
@@ -164,6 +193,100 @@ pub(crate) fn verify_object(path: &Path, identity: &age::x25519::Identity) -> Re
     Ok(())
 }
 
+fn save_original(stream: &mut impl Read, destination: &Path) -> Result<(), String> {
+    let parent = destination.parent().ok_or("Choose a folder to save the attachment.")?;
+    let mut output = tempfile::NamedTempFile::new_in(parent).map_err(message)?;
+    io::copy(stream, output.as_file_mut()).map_err(message)?;
+    output.as_file().sync_all().map_err(message)?;
+    output.persist_noclobber(destination)
+        .map_err(|error| if error.error.kind() == io::ErrorKind::AlreadyExists {
+            "That file already exists. Choose a different name.".into()
+        } else {
+            message(error)
+        })?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn save_media(app: AppHandle, id: String, mime: String, caption: String) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let item = Media { id, mime, caption };
+        if !valid_item(&item) {
+            return Err("Invalid attachment reference.".into());
+        }
+        let extension = match item.mime.as_str() {
+            "image/jpeg" => "jpg",
+            "video/quicktime" => "mov",
+            mime => mime.split_once('/').unwrap().1,
+        };
+        let name: String = item.caption.chars().take(100).map(|character| {
+            if character.is_control() || "<>:\"/\\|?*".contains(character) { '_' } else { character }
+        }).collect();
+        let name = name.trim_matches([' ', '.']);
+        let name = if name.is_empty() { "Attachment" } else { name };
+        let Some(mut destination) = rfd::FileDialog::new()
+            .set_title("Save original attachment")
+            .set_file_name(format!("{name}.{extension}"))
+            .add_filter("Original attachment", &[extension])
+            .save_file()
+        else {
+            return Ok(false);
+        };
+        if destination.extension().is_none() {
+            destination.set_extension(extension);
+        }
+        if destination.exists() {
+            return Err("That file already exists. Choose a different name.".into());
+        }
+        let archive = app.state::<Archive>();
+        let mut stream = {
+            let guard = archive.0.lock().map_err(message)?;
+            let session = guard.as_ref().ok_or("Unlock the notebook before saving an attachment.")?;
+            reader(&session.directory.join("media").join(format!("{}.age", item.id)), &session.identity)?
+        };
+        save_original(&mut stream, &destination)?;
+        Ok(true)
+    }).await.map_err(message)?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recognizes_supported_container_headers_and_rejects_mismatches() {
+        assert!(matches_header("image/png", b"\x89PNG\r\n\x1a\n"));
+        assert!(matches_header("video/mp4", b"\0\0\0\x18ftypisom"));
+        assert!(!matches_header("video/mp4", b"GIF89a"));
+        assert!(!matches_header("image/webp", b"RIFF"));
+        assert!(!matches_header("image/jpeg", b""));
+    }
+
+    #[test]
+    fn original_export_preserves_bytes_and_existing_files() {
+        let folder = tempfile::tempdir().unwrap();
+        let destination = folder.path().join("original.mp4");
+        let bytes = vec![42; 5 * 1024 * 1024];
+        save_original(&mut bytes.as_slice(), &destination).unwrap();
+        assert!(save_original(&mut &b"replacement"[..], &destination).is_err());
+        assert_eq!(fs::read(&destination).unwrap(), bytes);
+        assert_eq!(fs::read_dir(folder.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn failed_export_leaves_no_partial_file() {
+        struct Broken;
+        impl Read for Broken {
+            fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+                Err(io::Error::other("damaged attachment"))
+            }
+        }
+        let folder = tempfile::tempdir().unwrap();
+        assert!(save_original(&mut Broken, &folder.path().join("original.mp4")).is_err());
+        assert_eq!(fs::read_dir(folder.path()).unwrap().count(), 0);
+    }
+}
+
 pub(crate) fn playback(
     session: &Session,
     request: &Request<Vec<u8>>,
@@ -199,6 +322,9 @@ pub(crate) fn playback(
         .header(header::CACHE_CONTROL, "no-store")
         .header("X-Content-Type-Options", "nosniff");
     let range = request.headers().get(header::RANGE);
+    if request.method() == tauri::http::Method::HEAD {
+        return response.header(header::CONTENT_LENGTH, length).body(vec![]).map_err(message);
+    }
     let (start, end) = if let Some(value) = range {
         let parsed = value
             .to_str()

@@ -1,8 +1,8 @@
 import { memo, useId, useRef, useState } from "react"
-import { ImagePlus, Plus, Star, Trash2, X } from "lucide-react"
+import { Download, ImagePlus, Plus, Star, Trash2, X } from "lucide-react"
 import { type Memory, type People, type PersonId, type PersonMemoryLink } from "./memories"
 import { StoryInk } from "./StoryInk"
-import { convertFileSrc } from "@tauri-apps/api/core"
+import { convertFileSrc, invoke } from "@tauri-apps/api/core"
 import { DateSlip } from "./DateSlip"
 
 import { MemoryNotes } from "./MemoryNotes"
@@ -54,6 +54,20 @@ export const NotebookEntry = memo(function NotebookEntry({ entry, format, action
   const cover = items.find(item => item.id === entry.cover) ?? items[0]
   const gallery = cover ? [cover,...items.filter(item=>item.id!==cover.id)] : []
   const [failed,setFailed] = useState<string[]>([])
+  const [savingOriginal, setSavingOriginal] = useState(false)
+  const [saveStatus, setSaveStatus] = useState("")
+  async function saveOriginal(item: Media) {
+    setSavingOriginal(true)
+    setSaveStatus("Saving original…")
+    try {
+      const saved = await invoke<boolean>("save_media", {id:item.id, mime:item.mime, caption:item.caption})
+      setSaveStatus(saved ? "Original saved. This copy is unencrypted." : "")
+    } catch (error) {
+      setSaveStatus(String(error))
+    } finally {
+      setSavingOriginal(false)
+    }
+  }
   function openPhoto(id: string, trigger: HTMLButtonElement) {
     const photos = gallery.filter(item => !item.mime.startsWith("video/") && !failed.includes(item.id))
       .map(item => ({id:item.id, url:mediaUrl(entry,item), caption:item.caption}))
@@ -86,18 +100,21 @@ export const NotebookEntry = memo(function NotebookEntry({ entry, format, action
         const url=mediaUrl(entry,item)
         return <figure className={`photo-print media-print${item.id===cover?.id ? " cover-print" : ""}`} key={item.id}>
           {failed.includes(item.id) ? <div className="media-unavailable"><p>Couldn’t display this attachment.</p><button className="write-line" onClick={()=>setFailed(previous=>previous.filter(id=>id!==item.id))}>Retry preview</button></div> : item.mime.startsWith("video/") ?
-            <video src={url} controls preload="none" aria-label={item.caption || "Video"} onError={()=>setFailed(previous=>[...previous,item.id])}/> :
-            <button className="print-image" aria-haspopup="dialog" aria-label={item.caption ? `Enlarge photograph: ${item.caption}` : "Enlarge photograph"} onClick={event=>openPhoto(item.id,event.currentTarget)}><img src={url} alt={item.caption} loading="lazy" onError={()=>setFailed(previous=>[...previous,item.id])}/></button>}
+            <video src={url} controls playsInline preload="none" aria-label={item.caption || "Video"} onError={()=>setFailed(previous=>[...previous,item.id])}/> :
+            <button className="print-image" aria-haspopup="dialog" aria-label={item.caption ? `Enlarge photograph: ${item.caption}` : "Enlarge photograph"} onClick={event=>openPhoto(item.id,event.currentTarget)}><img src={url} alt={item.caption} loading="lazy" decoding="async" onError={()=>setFailed(previous=>[...previous,item.id])}/></button>}
           <figcaption><textarea dir="auto" rows={1} value={item.caption} aria-label="Media caption" placeholder="Write a caption"
             onKeyDown={event => { if (event.key === "Enter" && !event.nativeEvent.isComposing) event.preventDefault() }}
             onChange={event=>change({media:items.map(value=>value.id===item.id ? {...value,caption:event.target.value.replace(/[\r\n]+/g," ")} : value)})}/>
           <div className="print-actions">
+            {nativeMedia && !item.url && item.id !== "sample-cover" && item.id !== "legacy-cover" &&
+              <button type="button" className="icon-button" aria-label="Save original attachment" title="Save original attachment" disabled={savingOriginal} onClick={()=>void saveOriginal(item)}><Download size={15}/></button>}
             <button type="button" className="icon-button" aria-label={item.id===cover?.id ? "Cover media" : "Make cover"} aria-pressed={item.id===cover?.id} title={item.id===cover?.id ? "Cover media" : "Make cover"} onClick={()=>change({cover:item.id})}><Star size={15} fill={item.id===cover?.id ? "currentColor" : "none"}/></button>
             <button type="button" className="icon-button" aria-label="Remove attachment" title="Remove attachment" onClick={()=>change({media:items.filter(value=>value.id!==item.id), ...(item.id==="legacy-cover" ? {imageUrl:undefined} : {}), ...(item.id==="sample-cover" ? {photo:false} : {})})}><X size={15}/></button>
           </div></figcaption>
         </figure>
       })}
     </div>}
+    {saveStatus && <p className="media-unavailable" role="status">{saveStatus}</p>}
     <StoryInk editorId={`story-${entry.id}`} value={entry.text} change={text => change({text})} identify={identify} people={people}/>
     <MemoryNotes entry={entry} people={people} identify={identify} change={change} format={format}/>
     <div className="entry-tools">

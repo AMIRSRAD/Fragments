@@ -41,6 +41,7 @@ pub fn run() {
             archive::choose_backup,
             archive::save_readable_album,
             media::import_media,
+            media::save_media,
             media::read_album_media,
             archive::lock_archive
         ])
